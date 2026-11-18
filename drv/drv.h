@@ -113,6 +113,59 @@ void        drv_ir_stats (drv_ir_stats_t* stats);
 bool        drv_ir_next  (drv_evt_t* evt);
 
 ///////////////////////////////////////////////////////////////////////////////
+// ESP-NOW
+///////////////////////////////////////////////////////////////////////////////
+
+#define DRV_ESPNOW_MAX_DATA 250     // ESP_NOW_MAX_DATA_LEN
+
+typedef enum {
+    DRV_ESPNOW_NONE = 0,
+    DRV_ESPNOW_RECV,                // a message arrived
+    DRV_ESPNOW_SEND,                // the result of a send
+} drv_espnow_kind_t;
+
+// Apart from drv_evt_t, which would grow by the payload.
+typedef struct {
+    drv_espnow_kind_t kind;
+    int64_t time_us;
+    char mac[18];                   // "24:0a:c4:05:06:07"
+    bool ok;                        // SEND: delivered (unicast) or sent
+    int len;                        // RECV
+    uint8_t data[DRV_ESPNOW_MAX_DATA];
+} drv_espnow_evt_t;
+
+// Wi-Fi in station mode, channel 1, with the broadcast peer.
+const char* drv_espnow_init        (void);
+const char* drv_espnow_add_peer    (const char* mac);
+const char* drv_espnow_send        (const char* mac, const uint8_t* data, int len);
+const char* drv_espnow_get_mac     (char mac[18]);
+const char* drv_espnow_get_channel (int* channel);
+const char* drv_espnow_set_channel (int channel);
+bool        drv_espnow_next        (drv_espnow_evt_t* evt);
+
+///////////////////////////////////////////////////////////////////////////////
+// PREFERENCES (NVS): one namespace open at a time
+///////////////////////////////////////////////////////////////////////////////
+
+// The namespace and the keys have 1 to 15 characters.
+const char* drv_prefs_open   (const char* ns, bool readonly, const char* partition);
+const char* drv_prefs_close  (void);
+const char* drv_prefs_commit (void);
+
+// A put commits at once if `commit`. A get sets `*found` to false if
+// the key is absent.
+const char* drv_prefs_put_int  (const char* key, int32_t v, bool commit);
+const char* drv_prefs_get_int  (const char* key, bool* found, int32_t* v);
+const char* drv_prefs_put_bool (const char* key, bool v, bool commit);
+const char* drv_prefs_get_bool (const char* key, bool* found, bool* v);
+const char* drv_prefs_put_str  (const char* key, const char* v, bool commit);
+// `*v` is valid until the next call
+const char* drv_prefs_get_str  (const char* key, bool* found, const char** v);
+const char* drv_prefs_is_key   (const char* key, bool* yes);
+const char* drv_prefs_remove   (const char* key, bool commit);
+const char* drv_prefs_clear    (bool commit);
+
+///////////////////////////////////////////////////////////////////////////////
 // MEMORY
 ///////////////////////////////////////////////////////////////////////////////
 

@@ -9,6 +9,7 @@
 //
 //      <ms> pin <pin> <level>                      a pin goes to a level
 //      <ms> ir <protocol> <address> <command> [repeat]
+//      <ms> espnow <mac> <data>                    a message arrives
 //      <ms> quit                                   nothing more happens
 //      # a comment
 //
@@ -19,15 +20,18 @@
 // With ESP32_HOST_TRACE set, each action of the program on a driver is
 // printed as `[drv <ms>] ...`.
 //
+// A send of ESP-NOW succeeds at once; the preferences live in memory.
+//
 // The validation follows the ESP32 (the original): pins 0-39, of which
 // 34-39 are input only, 8 PWM channels, resolutions of 1-20 bits.
 
-#define _POSIX_C_SOURCE 199309L
+#define _DEFAULT_SOURCE
 
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <time.h>
 
 #include "../drv.h"
@@ -153,7 +157,7 @@ static const char* bad_channel (const char* fn, int ch) {
 // PENDING: what happens at a future time
 ///////////////////////////////////////////////////////////////////////////////
 
-typedef enum { P_FADE, P_PIN, P_IR, P_QUIT } pending_kind_t;
+typedef enum { P_FADE, P_PIN, P_IR, P_ESPNOW, P_QUIT } pending_kind_t;
 
 typedef struct {
     int64_t at;
@@ -161,6 +165,7 @@ typedef struct {
     pending_kind_t kind;
     int a, b;           // fade: channel; pin: pin, level
     drv_evt_t ir;
+    drv_espnow_evt_t now;
 } pending_t;
 
 static pending_t PEND[PENDING_MAX];
@@ -206,6 +211,11 @@ static void pin_change (int pin, int level) {
 static bool IR_ON = false;
 static drv_ir_stats_t IR_STATS;
 
+#define ESPNOW_QUEUE_LEN 16
+static bool ESPNOW_ON = false;
+static drv_espnow_evt_t Q_NOW[ESPNOW_QUEUE_LEN];
+static int Q_NOW_HEAD = 0, Q_NOW_N = 0;
+
 static void pending_fire (pending_t p) {
     switch (p.kind) {
         case P_FADE: {
@@ -227,6 +237,12 @@ static void pending_fire (pending_t p) {
                 } else {
                     IR_STATS.dropped++;
                 }
+            }
+            break;
+        case P_ESPNOW:
+            if (ESPNOW_ON && Q_NOW_N<ESPNOW_QUEUE_LEN) {
+                p.now.time_us = NOW;
+                Q_NOW[(Q_NOW_HEAD + Q_NOW_N++) % ESPNOW_QUEUE_LEN] = p.now;
             }
             break;
         case P_QUIT:
@@ -307,6 +323,20 @@ static void script_read (void) {
             p.ir.u.ir.bits    = 32;
             p.ir.u.ir.raw     = ((uint64_t)addr << 16) | (cmd & 0xFFFF);
             p.ir.u.ir.repeat  = !strcmp(rep, "repeat");
+        } else if (!strcmp(what, "espnow")) {
+            int len = 0;
+            p.kind = P_ESPNOW;
+            p.now.kind = DRV_ESPNOW_RECV;
+            p.now.ok = true;
+            if (sscanf(rest, "%17s %n", p.now.mac, &len) < 1) {
+                script_fail(path, n, line);
+            }
+            const char* data = rest + len;
+            p.now.len = (int) strlen(data);
+            if (p.now.len > DRV_ESPNOW_MAX_DATA) {
+                script_fail(path, n, line);
+            }
+            memcpy(p.now.data, data, p.now.len);
         } else if (!strcmp(what, "quit")) {
             p.kind = P_QUIT;
         } else {
@@ -343,7 +373,7 @@ int64_t drv_clock_wait (int64_t max_us) {
     if (QUIT) {
         return -1;
     }
-    if (Q_GPIO.n>0 || Q_IR.n>0) {
+    if (Q_GPIO.n>0 || Q_IR.n>0 || Q_NOW_N>0) {
         return 0;           // the secondaries have events to emit
     }
     int k = pending_next();
@@ -614,6 +644,303 @@ void drv_ir_stats (drv_ir_stats_t* stats) {
 
 bool drv_ir_next (drv_evt_t* evt) {
     return queue_get(&Q_IR, evt);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// ESP-NOW
+///////////////////////////////////////////////////////////////////////////////
+
+#define HOST_MAC "24:0a:c4:00:00:01"
+
+static int CHANNEL = 1;
+static char PEERS[20][18];
+static int NPEERS = 0;
+
+static bool valid_mac (const char* mac) {
+    unsigned v[6];
+    char end;
+    return sscanf(mac, "%x:%x:%x:%x:%x:%x%c",
+                  &v[0],&v[1],&v[2],&v[3],&v[4],&v[5],&end) == 6;
+}
+
+const char* drv_espnow_init (void) {
+    if (!ESPNOW_ON) {
+        trace("espnow.init");
+        ESPNOW_ON = true;
+        strcpy(PEERS[NPEERS++], "ff:ff:ff:ff:ff:ff");
+    }
+    return NULL;
+}
+
+const char* drv_espnow_add_peer (const char* mac) {
+    if (!ESPNOW_ON) {
+        return drv_errf("espnow.add_peer : esp-now is not initialized");
+    }
+    if (!valid_mac(mac)) {
+        return drv_errf("espnow.add_peer : invalid MAC address format '%s'", mac);
+    }
+    for (int i=0; i<NPEERS; i++) {
+        if (!strcasecmp(PEERS[i], mac)) {
+            return NULL;
+        }
+    }
+    if (NPEERS == 20) {
+        return drv_errf("espnow.add_peer : failed to add esp-now peer: ESP_ERR_ESPNOW_FULL");
+    }
+    snprintf(PEERS[NPEERS++], 18, "%s", mac);
+    trace("espnow.add_peer %s", mac);
+    return NULL;
+}
+
+const char* drv_espnow_send (const char* mac, const uint8_t* data, int len) {
+    if (!ESPNOW_ON) {
+        return drv_errf("espnow.send : esp-now is not initialized");
+    }
+    if (!valid_mac(mac)) {
+        return drv_errf("espnow.send : invalid MAC address format '%s'", mac);
+    }
+    if (len > DRV_ESPNOW_MAX_DATA) {
+        return drv_errf("espnow.send : data length %d exceeds max ESP-NOW "
+                        "payload of %d bytes", len, DRV_ESPNOW_MAX_DATA);
+    }
+    bool peer = false;
+    for (int i=0; i<NPEERS; i++) {
+        peer = peer || !strcasecmp(PEERS[i], mac);
+    }
+    if (!peer) {
+        return drv_errf("espnow.send : esp_now_send failed: ESP_ERR_ESPNOW_NOT_FOUND");
+    }
+    trace("espnow.send %s %.*s", mac, len, (const char*)data);
+    pending_t p = { .at=NOW, .kind=P_ESPNOW };
+    p.now.kind = DRV_ESPNOW_SEND;
+    p.now.ok   = true;
+    snprintf(p.now.mac, sizeof(p.now.mac), "%s", mac);
+    pending_add(p);
+    return NULL;
+}
+
+const char* drv_espnow_get_mac (char mac[18]) {
+    strcpy(mac, HOST_MAC);
+    return NULL;
+}
+
+const char* drv_espnow_get_channel (int* channel) {
+    *channel = CHANNEL;
+    return NULL;
+}
+
+const char* drv_espnow_set_channel (int channel) {
+    if (channel<1 || channel>14) {
+        return drv_errf("espnow.set_channel : invalid Wi-Fi channel (1-14)");
+    }
+    CHANNEL = channel;
+    trace("espnow.set_channel %d", channel);
+    return NULL;
+}
+
+bool drv_espnow_next (drv_espnow_evt_t* evt) {
+    if (Q_NOW_N == 0) {
+        return false;
+    }
+    *evt = Q_NOW[Q_NOW_HEAD];
+    Q_NOW_HEAD = (Q_NOW_HEAD + 1) % ESPNOW_QUEUE_LEN;
+    Q_NOW_N--;
+    return true;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// PREFERENCES: in memory
+///////////////////////////////////////////////////////////////////////////////
+
+typedef enum { NV_INT, NV_BOOL, NV_STR } nv_type_t;
+
+typedef struct {
+    bool used;
+    char ns[16];
+    char key[16];
+    nv_type_t type;
+    int32_t i;
+    char* s;
+} nv_t;
+
+#define NV_MAX 64
+static nv_t NV[NV_MAX];
+static char NS[16] = "";        // the open namespace, or ""
+static bool NS_RO = false;
+
+static const char* nv_check (const char* fn, const char* key, bool write) {
+    if (NS[0] == '\0') {
+        return drv_errf("%s : no namespace is open (call preferences.open first)", fn);
+    }
+    size_t n = strlen(key);
+    if (n<1 || n>15) {
+        return drv_errf("%s : key length must be between 1 and 15 characters", fn);
+    }
+    if (write && NS_RO) {
+        return drv_errf("%s : failed to write '%s': ESP_ERR_NVS_READ_ONLY", fn, key);
+    }
+    return NULL;
+}
+
+static nv_t* nv_find (const char* key) {
+    for (int i=0; i<NV_MAX; i++) {
+        if (NV[i].used && !strcmp(NV[i].ns,NS) && !strcmp(NV[i].key,key)) {
+            return &NV[i];
+        }
+    }
+    return NULL;
+}
+
+static nv_t* nv_new (const char* fn, const char* key, nv_type_t type, const char** err) {
+    nv_t* v = nv_find(key);
+    if (v == NULL) {
+        for (int i=0; i<NV_MAX && v==NULL; i++) {
+            if (!NV[i].used) {
+                v = &NV[i];
+            }
+        }
+        if (v == NULL) {
+            *err = drv_errf("%s : failed to write '%s': ESP_ERR_NVS_NOT_ENOUGH_SPACE", fn, key);
+            return NULL;
+        }
+        v->used = true;
+        strcpy(v->ns, NS);
+        strcpy(v->key, key);
+    }
+    free(v->s);
+    v->s = NULL;
+    v->type = type;
+    return v;
+}
+
+const char* drv_prefs_open (const char* ns, bool readonly, const char* part) {
+    size_t n = strlen(ns);
+    if (n<1 || n>15) {
+        return drv_errf("preferences.open : namespace length must be between 1 and 15 characters");
+    }
+    strcpy(NS, ns);
+    NS_RO = readonly;
+    trace("preferences.open %s%s%s%s", ns, readonly ? " readonly" : "",
+          part ? " " : "", part ? part : "");
+    return NULL;
+}
+
+const char* drv_prefs_close (void) {
+    if (NS[0] != '\0') {
+        trace("preferences.close %s", NS);
+    }
+    NS[0] = '\0';
+    return NULL;
+}
+
+const char* drv_prefs_commit (void) {
+    const char* e = (NS[0]=='\0') ? nv_check("preferences.commit", "", false) : NULL;
+    return e;
+}
+
+const char* drv_prefs_put_int (const char* key, int32_t i, bool commit) {
+    (void) commit;
+    const char* e = nv_check("preferences.put_int", key, true);
+    nv_t* v = (e == NULL) ? nv_new("preferences.put_int", key, NV_INT, &e) : NULL;
+    if (v != NULL) {
+        v->i = i;
+        trace("preferences.put_int %s %d", key, (int)i);
+    }
+    return e;
+}
+
+const char* drv_prefs_get_int (const char* key, bool* found, int32_t* i) {
+    const char* e = nv_check("preferences.get_int", key, false);
+    nv_t* v = (e == NULL) ? nv_find(key) : NULL;
+    *found = (v!=NULL && v->type==NV_INT);
+    if (*found) {
+        *i = v->i;
+    } else if (v != NULL) {
+        e = drv_errf("preferences.get_int : failed to read int '%s': "
+                     "ESP_ERR_NVS_TYPE_MISMATCH", key);
+    }
+    return e;
+}
+
+const char* drv_prefs_put_bool (const char* key, bool b, bool commit) {
+    (void) commit;
+    const char* e = nv_check("preferences.put_bool", key, true);
+    nv_t* v = (e == NULL) ? nv_new("preferences.put_bool", key, NV_BOOL, &e) : NULL;
+    if (v != NULL) {
+        v->i = b;
+        trace("preferences.put_bool %s %s", key, b ? "true" : "false");
+    }
+    return e;
+}
+
+const char* drv_prefs_get_bool (const char* key, bool* found, bool* b) {
+    const char* e = nv_check("preferences.get_bool", key, false);
+    nv_t* v = (e == NULL) ? nv_find(key) : NULL;
+    *found = (v!=NULL && v->type==NV_BOOL);
+    if (*found) {
+        *b = v->i;
+    } else if (v != NULL) {
+        e = drv_errf("preferences.get_bool : failed to read bool '%s': "
+                     "ESP_ERR_NVS_TYPE_MISMATCH", key);
+    }
+    return e;
+}
+
+const char* drv_prefs_put_str (const char* key, const char* s, bool commit) {
+    (void) commit;
+    const char* e = nv_check("preferences.put_string", key, true);
+    nv_t* v = (e == NULL) ? nv_new("preferences.put_string", key, NV_STR, &e) : NULL;
+    if (v != NULL) {
+        v->s = strdup(s);
+        trace("preferences.put_string %s %s", key, s);
+    }
+    return e;
+}
+
+const char* drv_prefs_get_str (const char* key, bool* found, const char** s) {
+    const char* e = nv_check("preferences.get_string", key, false);
+    nv_t* v = (e == NULL) ? nv_find(key) : NULL;
+    *found = (v!=NULL && v->type==NV_STR);
+    if (*found) {
+        *s = v->s;
+    } else if (v != NULL) {
+        e = drv_errf("preferences.get_string : failed to read string '%s': "
+                     "ESP_ERR_NVS_TYPE_MISMATCH", key);
+    }
+    return e;
+}
+
+const char* drv_prefs_is_key (const char* key, bool* yes) {
+    const char* e = nv_check("preferences.is_key", key, false);
+    *yes = (e == NULL) && (nv_find(key) != NULL);
+    return e;
+}
+
+const char* drv_prefs_remove (const char* key, bool commit) {
+    (void) commit;
+    const char* e = nv_check("preferences.remove", key, true);
+    nv_t* v = (e == NULL) ? nv_find(key) : NULL;
+    if (v != NULL) {
+        free(v->s);
+        memset(v, 0, sizeof(*v));
+        trace("preferences.remove %s", key);
+    }
+    return e;
+}
+
+const char* drv_prefs_clear (bool commit) {
+    (void) commit;
+    const char* e = nv_check("preferences.clear", "x", true);
+    if (e == NULL) {
+        for (int i=0; i<NV_MAX; i++) {
+            if (NV[i].used && !strcmp(NV[i].ns, NS)) {
+                free(NV[i].s);
+                memset(&NV[i], 0, sizeof(NV[i]));
+            }
+        }
+        trace("preferences.clear %s", NS);
+    }
+    return e;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
