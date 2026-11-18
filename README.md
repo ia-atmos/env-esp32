@@ -1,4 +1,32 @@
-# Lua Atmos on ESP32
+# Atmos on the ESP32
+
+This repository runs [Atmos](https://github.com/ia-atmos/lang) programs
+on the ESP32. It holds two implementations:
+
+| | C (ia-atmos/lang) | Lua (reference) |
+|---|---|---|
+| State | replaces the Lua one; tested on the host, not yet on the board | runs on the board |
+| Program | `app/init.atm` | `atm/init.atm` |
+| Environment | `env/*.atm` over `drv/` ([doc/env.md](doc/env.md)) | `lua/esp32/*.lua` over `main/*.c` ([doc/api.md](doc/api.md)) |
+| Build | `make test` (host), `cd esp32 && idf.py build` (board) | `idf.py build` at the root |
+
+The Lua implementation is removed once the C one runs on the board.
+
+## C implementation
+
+```bash
+git submodule update --init ext/lang    # ia-atmos/lang: the compiler and the runtime
+make -C ext/lang
+make test                               # tst/*.atm and app/init.atm, on the host
+cd esp32 && idf.py -p /dev/ttyUSB0 build flash monitor
+```
+
+See [doc/env.md](doc/env.md) for the modules, the differences from the
+Lua version, and the tests on the host.
+
+---
+
+# Lua implementation (reference)
 
 ## API Documentation
 For the complete API signature reference, list of hardware functions, event payloads, and code examples, see:
