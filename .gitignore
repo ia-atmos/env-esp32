@@ -4,3 +4,4 @@ sdkconfig
 .cache/
 **__pycache__/
 ext/UltraT/
+build-host/

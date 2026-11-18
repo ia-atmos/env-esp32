@@ -1,0 +1,29 @@
+;; gpio: pins, watches, PWM and fades, on the host
+
+gpio.setup(2, "output")
+gpio.write(2, true)
+print(:read, gpio.read(2))
+
+gpio.setup(4, "input")
+gpio.watch(4)
+val e = await :gpio [pin=4]
+print(:gpio, e.pin, e.value, e.edge, e.time)
+val f = await :gpio [pin=4, edge="falling"]
+print(:gpio, f.pin, f.value, f.edge, f.time)
+gpio.unwatch(4)
+
+gpio.setup_pwm(0, 25000, 10)
+gpio.attach_pwm(19, 0)
+gpio.write_pwm(0, 0)
+gpio.fade_pwm(0, 1023, 2000)
+val d = await :gpio.pwm_fade
+print(:fade, d.channel, d.time, clock.now)
+
+print(:adc, gpio.read_adc(34), gpio.read_adc(34, 6), gpio.read_adc(34, "2.5db"))
+
+val ok, err = catch true { gpio.write(34, 1) }
+print(:catch, ok, err)
+val ok2, err2 = catch true { gpio.write_pwm(0, 2000) }
+print(:catch, ok2, err2)
+val ok3, err3 = catch true { gpio.setup("x", "input") }
+print(:catch, ok3, err3)

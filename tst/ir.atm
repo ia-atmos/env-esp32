@@ -1,0 +1,14 @@
+;; ir: decoded frames as events, repeats, stats, on the host
+
+ir.start(15)
+val e = await :ir [repeat=false]
+print(:ir, e.protocol, e.address, e.command, e.raw, e.bits, e.repeat, e.time)
+loop i in 2 {
+    val r = await :ir
+    print(:ir, r.command, r.repeat)
+}
+val s = ir.stats()
+print(:stats, s.captured, s.decoded, s.invalid, s.dropped)
+ir.stop()
+val ok, err = catch true { ir.start(15, [glitch_ns=5000]) }
+print(:catch, ok, err)

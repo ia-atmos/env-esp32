@@ -1,0 +1,5 @@
+# a repeat before the first frame, then a frame and two repeats
+50  ir nec 0x00 0x45 repeat
+100 ir nec 0x00 0x45
+210 ir nec 0x00 0x45 repeat
+320 ir nec 0x00 0x46
