@@ -6,16 +6,13 @@ State of the session `env-esp32`. Plan: `261118-env-esp32.md`.
 
 One at a time, in this order; each with a recommendation.
 
-1. **The goal** (asked on 2026-11-18): keep the Lua port and add the C
-   backend beside it, replace it, or only study it.
-   Recommendation: keep and add beside. The Lua port is the only
-   version that runs on the board and is the baseline for the
-   comparison (flash, free heap, events per second); the drivers
-   (ISRs, queues, the IR decoder) are shared by both.
 2. **Ownership**: this is a copy of `pgvalle-research/atmos-esp32` at
    `d56bcb0`; Pedro's repository goes on. How the two stay in sync.
-3. **The first step**: `atm/init.atm` (PWM fade and IR) built by
-   `ia-atmos/lang` into the ESP-IDF application.
+3. **The first step** (asked on 2026-11-18): how to get there.
+   Recommendation: `atm/init.atm` (PWM fade and IR) built by
+   `ia-atmos/lang`, first on the host with the drivers mocked (nothing
+   to install), the Lua port kept in the tree until the C version runs
+   on the board, then removed.
 4. **Testing with no board**: a host build with mocked bindings,
    Espressif's QEMU, or the author/Pedro with the hardware. Installing
    ESP-IDF or QEMU here needs permission.
@@ -48,4 +45,9 @@ One at a time, in this order; each with a recommendation.
 
 ## Decided by the author
 
-- (nothing)
+- 2026-11-18, **the goal**: replace. The reference Atmos (the Lua
+  implementation: the Lua VM, `lua/`, the bytecode build, the
+  submodules) gives place to `ia-atmos/lang` (Atmos compiled to C) in
+  this repository. His words: "nosso objetivo aqui é substituir o atmos
+  referencia pelo ia-atmos daqui". (The session had recommended keeping
+  both.)
