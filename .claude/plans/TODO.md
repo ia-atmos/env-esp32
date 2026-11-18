@@ -6,42 +6,47 @@ State of the session `env-esp32`. Plan: `261118-env-esp32.md`.
 
 One at a time, in this order; each with a recommendation.
 
+1. **Build for the board here** (asked on 2026-11-18): install ESP-IDF
+   v6 in the session (and perhaps Espressif's QEMU) to build `esp32/`,
+   or leave the build to the author/Pedro with the board.
+   Recommendation: install ESP-IDF (a few GB, redone in each new
+   session unless saved as the setup script of the environment); it
+   checks that `drv/esp32/*.c` and the runtime compile for Xtensa, and
+   gives the sizes in flash. QEMU only after, if the build works.
 2. **Ownership**: this is a copy of `pgvalle-research/atmos-esp32` at
-   `d56bcb0`; Pedro's repository goes on. How the two stay in sync.
-3. **The first step** (asked on 2026-11-18): how to get there.
-   Recommendation: `atm/init.atm` (PWM fade and IR) built by
-   `ia-atmos/lang`, first on the host with the drivers mocked (nothing
-   to install), the Lua port kept in the tree until the C version runs
-   on the board, then removed.
-4. **Testing with no board**: a host build with mocked bindings,
-   Espressif's QEMU, or the author/Pedro with the hardware. Installing
-   ESP-IDF or QEMU here needs permission.
-5. **The submodules**: SSH URLs of `pgvalle-research`; they do not
-   clone in a cloud session.
+   `d56bcb0`; Pedro's repository goes on. How the two stay in sync, and
+   whether Pedro tests on the board.
+3. **ultrat**: `atm/ultrat/` is unfinished in the Lua version
+   (`ultrat.pins` vs `board.atm`, `motors` and `modes` undefined,
+   `drv.move` vs `drv.Move`, `gpio.read(...) == true` where `read`
+   gives 0/1). Port it as it is, or wait for Pedro.
+4. **Removing the Lua implementation**: when the C one runs on the board
+   (`lua/`, `main/`, `atm/`, `compile_lua.py`, `partitions.csv`, the
+   submodules of `pgvalle-research`, the root ESP-IDF project; `esp32/`
+   and `app/` move to the root).
 
 ## Known and not done
 
-- Nothing was built: the container has `gcc`, `cmake`, `ninja` and
-  `python3`, and no ESP-IDF, no cross compiler, no QEMU, no Lua; the
-  submodules are empty.
-- Each binding mixes the driver with the Lua API (lines that touch
-  `lua_*`: `gpio.c` 114 of 660, `preferences.c` 97 of 351, `espnow.c`
-  55 of 344, `ir/ir.c` 55 of 371, `ir/decoder.c` 0 of 238). A C backend
-  needs the driver split from the Lua glue: argument checks,
-  `luaL_error`, and `next_event` building a Lua table.
-- `main/main.c` is all Lua (VM, LittleFS, package path, hook, GC); the
-  C backend needs its own `app_main` over `atm_init`/`atm_main`, with
-  the clock from `esp_timer_get_time` and `vTaskDelay` in place of
-  `clock_gettime`/`nanosleep` of `rt/main.c`.
-- `atm/ultrat/` is unfinished and in the Lua dialect: `require`,
-  `ultrat.pins` (the file is `board.atm`), `motors` and `modes`
-  undefined in `modes.atm`, `drv.move` vs `drv.Move`. Not checked
-  against the C compiler.
-- `sdkconfig.old` is committed.
+- `drv/esp32/*.c` and `esp32/` were never compiled: no ESP-IDF here.
+- The board drivers duplicate `main/*.c` (and `drv/esp32/decoder.*`
+  copies `main/ir/decoder.*`) until the Lua version is removed.
+- On the board, a program that loops without awaiting starves the idle
+  task, and the task watchdog warns (the Lua version yielded in a hook
+  every 500 ms).
+- The host does not reject an IR repeat with no frame before it (the
+  board counts it as invalid).
+- Reals are doubles, emulated in software on the ESP32 (no
+  double-precision FPU): to measure on the board (compiler item 3).
+- Compare on the board with the Lua version: flash, free heap, wake-ups
+  per second (`debug.Mem`, `debug.Fps`). On the host, `app/init.atm`
+  peaks at about 31 KB of heap (64-bit pointers).
+- `sdkconfig.old` is committed (Lua project).
 
 ## Reported and not acknowledged
 
-- (nothing)
+- 2026-11-18, to `atmos-lang`: `A_STK_MAX` fixed at 4 MB and an
+  unchecked `malloc` in `atm_init`. Fixed in lang `36e36d8` (the
+  submodule `ext/lang` is at that commit).
 
 ## Decided by the author
 
@@ -51,3 +56,9 @@ One at a time, in this order; each with a recommendation.
   this repository. His words: "nosso objetivo aqui é substituir o atmos
   referencia pelo ia-atmos daqui". (The session had recommended keeping
   both.)
+- 2026-11-18, **the first step**: "Faça tudo na ordem que preferir".
+  Done: the drivers as plain C (`drv/`), the environment in Atmos
+  (`env/`), a host simulation with tests (`make test`), `app/init.atm`
+  ported, and an ESP-IDF project (`esp32/`) with ia-atmos/lang as the
+  submodule `ext/lang`. The Lua version stays until the C one runs on
+  the board.
