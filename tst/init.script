@@ -1,0 +1,12 @@
+# app/init.atm: a key after each fade (fades take 2s), with a repeat
+# that must be ignored; nothing after 21s
+2500  ir nec 0x00 0x45
+2600  ir nec 0x00 0x45 repeat
+5000  ir nec 0x00 0x45
+7500  ir nec 0x00 0x45
+10000 ir nec 0x00 0x45
+12500 ir nec 0x00 0x45
+15000 ir nec 0x00 0x45
+17500 ir nec 0x00 0x45
+20000 ir nec 0x00 0x45
+21000 quit

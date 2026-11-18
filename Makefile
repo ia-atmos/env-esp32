@@ -2,7 +2,7 @@
 # ia-atmos/lang with the drivers simulated on the host (drv/host/), to
 # test with no board. The board build is ESP-IDF (CMakeLists.txt).
 #
-#   make host LANG_DIR=<checkout of ia-atmos/lang>     builds atm/init.atm
+#   make host LANG_DIR=<checkout of ia-atmos/lang>     builds app/init.atm
 #   make test LANG_DIR=...                             runs tst/*.atm
 #
 # The checkout must be built first (`make -C <lang>`).
@@ -23,8 +23,13 @@ all: host
 
 host: $(BUILD)/init
 
-$(BUILD)/init: atm/init.atm $(ENVS) $(DRV)
+$(BUILD)/init: app/init.atm $(ENVS) $(DRV)
 	@mkdir -p $(BUILD)
+	ATMOS_CFLAGS="$(HOST_CFLAGS)" ATMOS_LDFLAGS="$(HOST_LDFLAGS)" \
+	    $(ATMOS) -e $(ENV) -o $@ $<
+
+$(BUILD)/tst/init: app/init.atm $(ENVS) $(DRV)
+	@mkdir -p $(BUILD)/tst
 	ATMOS_CFLAGS="$(HOST_CFLAGS)" ATMOS_LDFLAGS="$(HOST_LDFLAGS)" \
 	    $(ATMOS) -e $(ENV) -o $@ $<
 
@@ -34,8 +39,8 @@ $(BUILD)/tst/%: tst/%.atm $(ENVS) $(DRV)
 	    $(ATMOS) -e $(ENV) -o $@ $<
 
 # Each tst/<t>.atm runs with tst/<t>.script (if any) as its input, and
-# its output must be tst/<t>.out.
-TSTS := $(wildcard tst/*.atm)
+# its output must be tst/<t>.out. The test `init` is app/init.atm.
+TSTS := $(wildcard tst/*.atm) tst/init.atm
 
 test: $(TSTS:tst/%.atm=$(BUILD)/tst/%)
 	@for t in $(TSTS:tst/%.atm=%); do \

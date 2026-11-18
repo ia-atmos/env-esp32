@@ -1,0 +1,62 @@
+[drv 0ms] ir.start 15
+[drv 0ms] gpio.setup_pwm 0 25000 10
+[drv 0ms] gpio.attach_pwm 19 0
+[drv 0ms] gpio.write_pwm 0 0
+[drv 0ms] gpio.fade_pwm 0 1023 2000
+[MEM] Free Heap: 87.5% (280 KB) | Min Free: 84.4% | Stack Free: 4096 B
+FPS:	0
+[MEM] Free Heap: 87.5% (280 KB) | Min Free: 84.4% | Stack Free: 4096 B
+FPS:	0
+[drv 2500ms] gpio.fade_pwm 0 0 2000
+[MEM] Free Heap: 87.5% (280 KB) | Min Free: 84.4% | Stack Free: 4096 B
+FPS:	2
+[MEM] Free Heap: 87.5% (280 KB) | Min Free: 84.4% | Stack Free: 4096 B
+FPS:	0
+[MEM] Free Heap: 87.5% (280 KB) | Min Free: 84.4% | Stack Free: 4096 B
+FPS:	1
+[drv 5000ms] gpio.detach_pwm 19
+[drv 5000ms] gpio.attach_pwm 18 0
+[drv 5000ms] gpio.write_pwm 0 0
+[drv 5000ms] gpio.fade_pwm 0 1023 2000
+[MEM] Free Heap: 87.5% (280 KB) | Min Free: 84.4% | Stack Free: 4096 B
+FPS:	0
+[MEM] Free Heap: 87.5% (280 KB) | Min Free: 84.4% | Stack Free: 4096 B
+FPS:	0
+[drv 7500ms] gpio.fade_pwm 0 0 2000
+[MEM] Free Heap: 87.5% (280 KB) | Min Free: 84.4% | Stack Free: 4096 B
+FPS:	1
+[MEM] Free Heap: 87.5% (280 KB) | Min Free: 84.4% | Stack Free: 4096 B
+FPS:	0
+[MEM] Free Heap: 87.5% (280 KB) | Min Free: 84.4% | Stack Free: 4096 B
+FPS:	1
+[drv 10000ms] gpio.detach_pwm 18
+[drv 10000ms] gpio.attach_pwm 4 0
+[drv 10000ms] gpio.write_pwm 0 0
+[drv 10000ms] gpio.fade_pwm 0 1023 2000
+[MEM] Free Heap: 87.5% (280 KB) | Min Free: 84.4% | Stack Free: 4096 B
+FPS:	0
+[MEM] Free Heap: 87.5% (280 KB) | Min Free: 84.4% | Stack Free: 4096 B
+FPS:	0
+[drv 12500ms] gpio.fade_pwm 0 0 2000
+[MEM] Free Heap: 87.5% (280 KB) | Min Free: 84.4% | Stack Free: 4096 B
+FPS:	1
+[MEM] Free Heap: 87.5% (280 KB) | Min Free: 84.4% | Stack Free: 4096 B
+FPS:	0
+[MEM] Free Heap: 87.5% (280 KB) | Min Free: 84.4% | Stack Free: 4096 B
+FPS:	1
+[drv 15000ms] gpio.detach_pwm 4
+[drv 15000ms] gpio.attach_pwm 23 0
+[drv 15000ms] gpio.write_pwm 0 0
+[drv 15000ms] gpio.fade_pwm 0 1023 2000
+[MEM] Free Heap: 87.5% (280 KB) | Min Free: 84.4% | Stack Free: 4096 B
+FPS:	0
+[MEM] Free Heap: 87.5% (280 KB) | Min Free: 84.4% | Stack Free: 4096 B
+FPS:	0
+[drv 17500ms] gpio.fade_pwm 0 0 2000
+[MEM] Free Heap: 87.5% (280 KB) | Min Free: 84.4% | Stack Free: 4096 B
+FPS:	1
+[MEM] Free Heap: 87.5% (280 KB) | Min Free: 84.4% | Stack Free: 4096 B
+FPS:	0
+[MEM] Free Heap: 87.5% (280 KB) | Min Free: 84.4% | Stack Free: 4096 B
+FPS:	1
+[drv 20000ms] gpio.detach_pwm 23
