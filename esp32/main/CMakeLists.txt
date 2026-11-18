@@ -22,12 +22,14 @@ idf_component_register(
         "${REPO}/drv/esp32/gpio.c"
         "${REPO}/drv/esp32/ir.c"
         "${REPO}/drv/esp32/decoder.c"
+        "${REPO}/drv/esp32/espnow.c"
+        "${REPO}/drv/esp32/prefs.c"
     INCLUDE_DIRS
         "${REPO}/drv"
         "${ATMOS_LANG}/rt"
     REQUIRES
         esp_timer esp_rom esp_driver_gpio esp_driver_ledc esp_driver_rmt
-        esp_adc nvs_flash
+        esp_adc nvs_flash esp_wifi esp_event esp_netif
 )
 
 if(NOT CMAKE_BUILD_EARLY_EXPANSION)
