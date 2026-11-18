@@ -49,10 +49,16 @@ One at a time, in this order; each with a recommendation.
 ## Reported and acknowledged
 
 - 2026-11-18, to `atmos-lang`: `A_STK_MAX` fixed at 4 MB and an
-  unchecked `malloc` in `atm_init`. Fixed in lang `36e36d8` (the
-  submodule `ext/lang` is at that commit). It notes other fixed sizes:
+  unchecked `malloc` in `atm_init`. Fixed in lang `36e36d8`. It notes other fixed sizes:
   `ATM_ENVS_MAX` (8 environments; this one uses 4) and `TRACE_MAX` (32),
   and waits for the measurement of reals on the board (its item 3).
+
+## Sessions
+
+- Compiler: `atmos-lang` (session_011eECogKVQ7ZzmWCoMST2wK).
+- The rules of `pin`: `atmos-pin` (session_011eECogSDhkVfyt7qme5DLh).
+- Environments in general: `atmos-envs` (session_011eECofYWTNPACTtUjHN4p6).
+- `ext/lang` is at `8c9453c` (2026-11-18); the host tests pass there.
 
 ## Decided by the author
 
