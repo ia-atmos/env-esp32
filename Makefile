@@ -1,13 +1,15 @@
 # Host build: an Atmos program of this repository, compiled by
 # ia-atmos/lang with the drivers simulated on the host (drv/host/), to
-# test with no board. The board build is ESP-IDF (CMakeLists.txt).
+# test with no board. The board build is ESP-IDF, in esp32/.
 #
-#   make host LANG_DIR=<checkout of ia-atmos/lang>     builds app/init.atm
-#   make test LANG_DIR=...                             runs tst/*.atm
+#   make host       builds app/init.atm into build-host/init
+#   make test       runs tst/*.atm and app/init.atm
 #
-# The checkout must be built first (`make -C <lang>`).
+# The compiler is the submodule ext/lang (or LANG_DIR=<checkout>), which
+# must be built first: `git submodule update --init ext/lang` and
+# `make -C ext/lang`.
 
-LANG_DIR ?= ../lang
+LANG_DIR ?= ext/lang
 ATMOS    := $(abspath $(LANG_DIR))/atmos
 
 ENV   := env/esp32.atm
