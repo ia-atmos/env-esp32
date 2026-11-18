@@ -1,0 +1,24 @@
+;; The clock: the primary environment.
+;;
+;; Each step waits until the nearest timer of the program, or until a
+;; driver has an event, and lets the time that passed pass in the
+;; program, in microseconds. `clock.now` is the time since boot.
+
+val clock = [now=0]
+
+atmos.env([
+    mode = [primary=true],
+    step = func () {
+        val nxt = atmos.next()
+        val dt = `:number drv_clock_wait(($nxt.type == A_NIL) ? -1 : (int64_t) a_dbl($nxt))`
+        set clock.now = `:number drv_clock_now()`
+        if dt < 0 {
+            true            ;; nothing can happen anymore (only the host)
+        } else {
+            if dt > 0 {
+                emit(dt)
+            }
+            false
+        }
+    },
+])

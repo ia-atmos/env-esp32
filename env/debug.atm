@@ -1,0 +1,48 @@
+;; Tasks that print the free memory and the steps of the clock per
+;; second, to compare versions on the board.
+
+```:prelude
+static drv_meminfo_t esp_mem;
+```
+
+val debug = []
+
+func debug.meminfo () {
+    `drv_meminfo(&esp_mem);`
+    [
+        heap_total            = `:number esp_mem.heap_total`,
+        heap_free             = `:number esp_mem.heap_free`,
+        heap_min_free         = `:number esp_mem.heap_min_free`,
+        heap_largest_free     = `:number esp_mem.heap_largest_free`,
+        internal_total        = `:number esp_mem.internal_total`,
+        internal_free         = `:number esp_mem.internal_free`,
+        internal_min_free     = `:number esp_mem.internal_min_free`,
+        internal_largest_free = `:number esp_mem.internal_largest_free`,
+        stack_free            = `:number esp_mem.stack_free`,
+    ]
+}
+
+task debug.Fps () {
+    loop {
+        var n = 0
+        watching 1s {
+            loop on :clock {
+                set n = n + 1
+            }
+        }
+        print("FPS:", n)
+    }
+}
+
+task debug.Mem () {
+    loop on 1s {
+        val m = debug.meminfo()
+        print(string.format(
+            "[MEM] Free Heap: %.1f%% (%d KB) | Min Free: %.1f%% | Stack Free: %d B",
+            (m.heap_free / m.heap_total) * 100,
+            m.heap_free // 1024,
+            (m.internal_min_free / m.internal_total) * 100,
+            m.stack_free
+        ))
+    }
+}

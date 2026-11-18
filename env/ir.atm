@@ -1,0 +1,64 @@
+;; IR receiver: NEC, Samsung, Sony SIRC and LG frames.
+;;
+;; Event, once for each decoded frame:
+;;      :ir [protocol, address, command, raw, bits, repeat, time]
+;;
+;; `raw` is an integer (the Lua version gave a hexadecimal string, for
+;; its 32-bit integers).
+
+```:prelude
+static drv_evt_t esp_ir_evt;
+
+static AStatus esp_ir_start (AVal pin, AVal glitch, AVal idle) {
+    int64_t p, g, i;
+    AStatus st = esp_int("ir.start", 1, pin, &p);
+    if (st == A_OK) st = esp_opt("ir.start", 2, glitch, &g);
+    if (st == A_OK) st = esp_opt("ir.start", 2, idle, &i);
+    if (st == A_OK) st = esp_chk(drv_ir_start((int)p, g, i));
+    return st;
+}
+
+static drv_ir_stats_t esp_ir_st;
+```
+
+val ir = []
+
+;; options: [glitch_ns=1250, idle_ns=15000000]
+func ir.start (io, options) {
+    val glitch = if options => options.glitch_ns => nil
+    val idle   = if options => options.idle_ns   => nil
+    `st = esp_ir_start($io, $glitch, $idle);`
+}
+
+func ir.stop () {
+    `st = esp_chk(drv_ir_stop());`
+}
+
+func ir.stats () {
+    `drv_ir_stats(&esp_ir_st);`
+    [
+        captured = `:number esp_ir_st.captured`,
+        decoded  = `:number esp_ir_st.decoded`,
+        invalid  = `:number esp_ir_st.invalid`,
+        dropped  = `:number esp_ir_st.dropped`,
+    ]
+}
+
+atmos.env([
+    mode = [secondary=true],
+    step = func () {
+        loop {
+            while `:boolean drv_ir_next(&esp_ir_evt)`
+            emit(:ir [
+                protocol = `:string esp_ir_evt.u.ir.protocol`,
+                address  = `:number esp_ir_evt.u.ir.address`,
+                command  = `:number esp_ir_evt.u.ir.command`,
+                raw      = `:number (int64_t) esp_ir_evt.u.ir.raw`,
+                bits     = `:number esp_ir_evt.u.ir.bits`,
+                repeat   = `:boolean esp_ir_evt.u.ir.repeat`,
+                time     = `:number esp_ir_evt.time_us`,
+            ])
+        }
+        false
+    },
+])

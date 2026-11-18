@@ -1,0 +1,48 @@
+;; The ESP32 environment: the clock as the primary environment, and one
+;; secondary environment per driver that emits events.
+;;
+;; A program uses it with `atmos -e env/esp32.atm`, or with an
+;; `include` of this file. It declares the modules `clock`, `gpio`,
+;; `ir` and `debug`, which call the drivers of drv/drv.h: those of the
+;; board (drv/esp32/) or those simulated on the host (drv/host/).
+
+```:prelude
+#include "drv.h"
+
+// The error of a driver, raised as an exception of the program.
+static AStatus esp_chk (const char* err) {
+    return (err == NULL) ? A_OK : a_error("%s", err);
+}
+
+// The argument `i` of the function `fn`, as an integer.
+static AStatus esp_int (const char* fn, int i, AVal v, int64_t* out) {
+    if (!a_isnum(v)) {
+        return a_error("%s : expected a number as argument %d", fn, i);
+    }
+    *out = (int64_t) a_dbl(v);
+    return A_OK;
+}
+
+// The argument `i` of the function `fn`, as a string.
+static AStatus esp_str (const char* fn, int i, AVal v, const char** out) {
+    if (v.type != A_STR) {
+        return a_error("%s : expected a string as argument %d", fn, i);
+    }
+    *out = A_STR_OF(v)->s;
+    return A_OK;
+}
+
+// An optional integer: nil is -1.
+static AStatus esp_opt (const char* fn, int i, AVal v, int64_t* out) {
+    if (v.type == A_NIL) {
+        *out = -1;
+        return A_OK;
+    }
+    return esp_int(fn, i, v, out);
+}
+```
+
+include "clock.atm"
+include "gpio.atm"
+include "ir.atm"
+include "debug.atm"

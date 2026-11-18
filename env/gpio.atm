@@ -1,0 +1,210 @@
+;; GPIO: digital pins, pin changes, ADC, and PWM with fades.
+;;
+;; Events:
+;;      :gpio [pin, value, edge, time]      a watched pin changed
+;;      :gpio.pwm_fade [channel, time]      a fade completed
+;;
+;; Note that `:gpio.pwm_fade` is a subtag of `:gpio`: `await :gpio`
+;; also awakes on a fade, and `await :gpio [pin=4]` does not.
+
+```:prelude
+static drv_evt_t esp_gpio_evt;
+
+static AStatus esp_gpio_setup (AVal pin, AVal mode) {
+    int64_t p; const char* m;
+    AStatus st = esp_int("gpio.setup", 1, pin, &p);
+    if (st == A_OK) st = esp_str("gpio.setup", 2, mode, &m);
+    if (st == A_OK) st = esp_chk(drv_gpio_setup((int)p, m));
+    return st;
+}
+
+static AStatus esp_gpio_read (AVal pin, AVal* ret) {
+    int64_t p; int v = 0;
+    AStatus st = esp_int("gpio.read", 1, pin, &p);
+    if (st == A_OK) st = esp_chk(drv_gpio_read((int)p, &v));
+    *ret = a_int(v);
+    return st;
+}
+
+static AStatus esp_gpio_write (AVal pin, AVal val) {
+    int64_t p;
+    AStatus st = esp_int("gpio.write", 1, pin, &p);
+    int v = (val.type == A_BOOL) ? val.u.b : (a_isnum(val) && a_dbl(val) != 0);
+    if (st == A_OK) st = esp_chk(drv_gpio_write((int)p, v));
+    return st;
+}
+
+static AStatus esp_gpio_watch (AVal pin, AVal edge) {
+    int64_t p; const char* e = "change";
+    AStatus st = esp_int("gpio.watch", 1, pin, &p);
+    if (st==A_OK && edge.type!=A_NIL) st = esp_str("gpio.watch", 2, edge, &e);
+    if (st == A_OK) st = esp_chk(drv_gpio_watch((int)p, e));
+    return st;
+}
+
+static AStatus esp_gpio_unwatch (AVal pin) {
+    int64_t p;
+    AStatus st = esp_int("gpio.unwatch", 1, pin, &p);
+    if (st == A_OK) st = esp_chk(drv_gpio_unwatch((int)p));
+    return st;
+}
+
+// atten: nil (12db), a string ("0db", "2.5db", ...), or a number (0, 2,
+// 6, 11, 12), as in the Lua version
+static AStatus esp_gpio_read_adc (AVal pin, AVal atten, AVal* ret) {
+    int64_t p; const char* a = NULL;
+    AStatus st = esp_int("gpio.read_adc", 1, pin, &p);
+    if (st==A_OK && a_isnum(atten)) {
+        switch ((int) a_dbl(atten)) {
+            case 0:  a = "0db";   break;
+            case 2:  a = "2.5db"; break;
+            case 6:  a = "6db";   break;
+            case 11: a = "11db";  break;
+            case 12: a = "12db";  break;
+            default: a = "?";     break;
+        }
+    } else if (st==A_OK && atten.type!=A_NIL) {
+        st = esp_str("gpio.read_adc", 2, atten, &a);
+    }
+    int raw = 0;
+    if (st == A_OK) st = esp_chk(drv_gpio_read_adc((int)p, a, &raw));
+    *ret = a_int(raw);
+    return st;
+}
+
+static AStatus esp_pwm_setup (AVal ch, AVal freq, AVal res) {
+    int64_t c, f, r;
+    AStatus st = esp_int("gpio.setup_pwm", 1, ch, &c);
+    if (st == A_OK) st = esp_int("gpio.setup_pwm", 2, freq, &f);
+    if (st == A_OK) st = esp_int("gpio.setup_pwm", 3, res, &r);
+    if (st == A_OK) st = esp_chk(drv_pwm_setup((int)c, (int)f, (int)r));
+    return st;
+}
+
+static AStatus esp_pwm_attach (AVal pin, AVal ch) {
+    int64_t p, c;
+    AStatus st = esp_int("gpio.attach_pwm", 1, pin, &p);
+    if (st == A_OK) st = esp_int("gpio.attach_pwm", 2, ch, &c);
+    if (st == A_OK) st = esp_chk(drv_pwm_attach((int)p, (int)c));
+    return st;
+}
+
+static AStatus esp_pwm_detach (AVal pin) {
+    int64_t p;
+    AStatus st = esp_int("gpio.detach_pwm", 1, pin, &p);
+    if (st == A_OK) st = esp_chk(drv_pwm_detach((int)p));
+    return st;
+}
+
+static AStatus esp_pwm_stop (AVal ch) {
+    int64_t c;
+    AStatus st = esp_int("gpio.stop_pwm", 1, ch, &c);
+    if (st == A_OK) st = esp_chk(drv_pwm_stop((int)c));
+    return st;
+}
+
+static AStatus esp_pwm_write (AVal ch, AVal duty) {
+    int64_t c, d;
+    AStatus st = esp_int("gpio.write_pwm", 1, ch, &c);
+    if (st == A_OK) st = esp_int("gpio.write_pwm", 2, duty, &d);
+    if (st == A_OK) st = esp_chk(drv_pwm_write((int)c, (int)d));
+    return st;
+}
+
+static AStatus esp_pwm_fade (AVal ch, AVal duty, AVal ms) {
+    int64_t c, d, m;
+    AStatus st = esp_int("gpio.fade_pwm", 1, ch, &c);
+    if (st == A_OK) st = esp_int("gpio.fade_pwm", 2, duty, &d);
+    if (st == A_OK) st = esp_int("gpio.fade_pwm", 3, ms, &m);
+    if (st == A_OK) st = esp_chk(drv_pwm_fade((int)c, (int)d, (int)m));
+    return st;
+}
+```
+
+val gpio = []
+
+;; mode: "input", "input_pullup", "input_pulldown", "output", "open_drain"
+func gpio.setup (io, mode) {
+    `st = esp_gpio_setup($io, $mode);`
+}
+set gpio.mode = gpio.setup
+
+;; the level of the pin: 0 or 1
+func gpio.read (io) {
+    var v = nil
+    `st = esp_gpio_read($io, &$v);`
+    v
+}
+
+;; value: a boolean, or a number (0 is low)
+func gpio.write (io, value) {
+    `st = esp_gpio_write($io, $value);`
+}
+
+;; edge: "rising", "falling", "both", or "change" (the default)
+func gpio.watch (io, edge) {
+    `st = esp_gpio_watch($io, $edge);`
+}
+
+func gpio.unwatch (io) {
+    `st = esp_gpio_unwatch($io);`
+}
+
+;; atten: "0db", "2.5db", "6db", "11db", "12db" (the default), or 0, 2,
+;; 6, 11, 12
+func gpio.read_adc (io, atten) {
+    var v = nil
+    `st = esp_gpio_read_adc($io, $atten, &$v);`
+    v
+}
+
+func gpio.setup_pwm (channel, freq, resolution) {
+    `st = esp_pwm_setup($channel, $freq, $resolution);`
+}
+
+func gpio.attach_pwm (io, channel) {
+    `st = esp_pwm_attach($io, $channel);`
+}
+
+func gpio.detach_pwm (io) {
+    `st = esp_pwm_detach($io);`
+}
+
+func gpio.stop_pwm (channel) {
+    `st = esp_pwm_stop($channel);`
+}
+
+func gpio.write_pwm (channel, duty) {
+    `st = esp_pwm_write($channel, $duty);`
+}
+
+;; emits :gpio.pwm_fade [channel] when the fade completes
+func gpio.fade_pwm (channel, duty, duration_ms) {
+    `st = esp_pwm_fade($channel, $duty, $duration_ms);`
+}
+
+atmos.env([
+    mode = [secondary=true],
+    step = func () {
+        loop {
+            val k = `:number drv_gpio_next(&esp_gpio_evt) ? esp_gpio_evt.kind : DRV_EVT_NONE`
+            until k == `:number DRV_EVT_NONE`
+            val time = `:number esp_gpio_evt.time_us`
+            if k == `:number DRV_EVT_GPIO` {
+                val v = `:number esp_gpio_evt.u.gpio.value`
+                emit(:gpio [
+                    pin   = `:number esp_gpio_evt.u.gpio.pin`,
+                    value = v,
+                    edge  = if v == 1 => "rising" => "falling",
+                    time  = time,
+                ])
+            } else {
+                emit(:gpio.pwm_fade [
+                    channel = `:number esp_gpio_evt.u.fade.channel`,
+                    time    = time,
+                ])
+            }
+        }
+        false
+    },
+])
