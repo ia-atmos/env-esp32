@@ -6,7 +6,8 @@ get_filename_component(REPO "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
 
 set(ATMOS_LANG "${REPO}/ext/lang" CACHE PATH "checkout of ia-atmos/lang")
 set(ATMOS_APP  "${REPO}/app/init.atm" CACHE FILEPATH "the Atmos program")
-set(ATMOS_STK  4096 CACHE STRING "entries of the value stack of the runtime")
+# 16 bytes each: app/init.atm needs fewer than 64 (measured on the host)
+set(ATMOS_STK  1024 CACHE STRING "entries of the value stack of the runtime")
 
 file(GLOB RT_SRC "${ATMOS_LANG}/rt/*.c")
 set(APP_C "${CMAKE_CURRENT_BINARY_DIR}/app.c")
