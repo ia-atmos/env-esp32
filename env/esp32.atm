@@ -3,8 +3,9 @@
 ;;
 ;; A program uses it with `atmos -e env/esp32.atm`, or with an
 ;; `include` of this file. It declares the modules `clock`, `gpio`,
-;; `ir` and `debug`, which call the drivers of drv/drv.h: those of the
-;; board (drv/esp32/) or those simulated on the host (drv/host/).
+;; `ir`, `espnow`, `preferences` and `debug`, which call the drivers of
+;; drv/drv.h: those of the board (drv/esp32/) or those simulated on the
+;; host (drv/host/).
 
 ```:prelude
 #include "drv.h"
@@ -45,4 +46,6 @@ static AStatus esp_opt (const char* fn, int i, AVal v, int64_t* out) {
 include "clock.atm"
 include "gpio.atm"
 include "ir.atm"
+include "espnow.atm"
+include "preferences.atm"
 include "debug.atm"

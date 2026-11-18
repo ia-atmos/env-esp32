@@ -1,0 +1,19 @@
+;; espnow: messages in and out, on the host
+
+espnow.init()
+print(:mac, espnow.get_mac(), espnow.get_channel())
+espnow.set_channel(6)
+print(:channel, espnow.get_channel())
+
+val r = await :espnow.recv
+print(:recv, r.mac, r.data, #r.data, r.time)
+
+espnow.add_peer("24:0a:c4:05:06:07")
+espnow.send("24:0a:c4:05:06:07", "PONG")
+val s = await :espnow.send
+print(:send, s.mac, s.status)
+
+val ok, err = catch true { espnow.send("00:00:00:00:00:01", "x") }
+print(:catch, ok, err)
+val ok2, err2 = catch true { espnow.set_channel(15) }
+print(:catch, ok2, err2)

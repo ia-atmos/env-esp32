@@ -1,0 +1,100 @@
+;; ESP-NOW: connectionless messages between boards, over Wi-Fi.
+;;
+;; Events:
+;;      :espnow.recv [mac, data, time]      a message arrived
+;;      :espnow.send [mac, status, time]    the result of a send:
+;;                                          "success" or "fail"
+;;
+;; A "success" of a unicast means that the peer acknowledged the
+;; message; of a broadcast ("ff:ff:ff:ff:ff:ff"), only that it was sent.
+
+```:prelude
+static drv_espnow_evt_t esp_now_evt;
+
+static AStatus esp_now_mac (const char* fn, AVal mac, const char** out) {
+    return esp_str(fn, 1, mac, out);
+}
+
+static AStatus esp_now_add_peer (AVal mac) {
+    const char* m;
+    AStatus st = esp_now_mac("espnow.add_peer", mac, &m);
+    if (st == A_OK) st = esp_chk(drv_espnow_add_peer(m));
+    return st;
+}
+
+static AStatus esp_now_send (AVal mac, AVal data) {
+    const char* m; const char* d;
+    AStatus st = esp_now_mac("espnow.send", mac, &m);
+    if (st == A_OK) st = esp_str("espnow.send", 2, data, &d);
+    if (st == A_OK) {
+        st = esp_chk(drv_espnow_send(m, (const uint8_t*)d, (int)A_STR_OF(data)->len));
+    }
+    return st;
+}
+
+static AStatus esp_now_set_channel (AVal ch) {
+    int64_t c;
+    AStatus st = esp_int("espnow.set_channel", 1, ch, &c);
+    if (st == A_OK) st = esp_chk(drv_espnow_set_channel((int)c));
+    return st;
+}
+
+static char esp_now_buf[18];
+static int  esp_now_ch;
+```
+
+val espnow = []
+
+func espnow.init () {
+    `st = esp_chk(drv_espnow_init());`
+}
+
+;; mac: "24:0a:c4:05:06:07"
+func espnow.add_peer (mac) {
+    `st = esp_now_add_peer($mac);`
+}
+
+;; emits :espnow.send [mac, status] with the result
+func espnow.send (mac, data) {
+    `st = esp_now_send($mac, $data);`
+}
+
+func espnow.get_mac () {
+    `st = esp_chk(drv_espnow_get_mac(esp_now_buf));`
+    `:string esp_now_buf`
+}
+
+func espnow.get_channel () {
+    `st = esp_chk(drv_espnow_get_channel(&esp_now_ch));`
+    `:number esp_now_ch`
+}
+
+;; channel: 1 to 14
+func espnow.set_channel (channel) {
+    `st = esp_now_set_channel($channel);`
+}
+
+atmos.env([
+    mode = [secondary=true],
+    step = func () {
+        loop {
+            while `:boolean drv_espnow_next(&esp_now_evt)`
+            val mac  = `:string esp_now_evt.mac`
+            val time = `:number esp_now_evt.time_us`
+            if `:boolean esp_now_evt.kind == DRV_ESPNOW_RECV` {
+                emit(:espnow.recv [
+                    mac  = mac,
+                    data = `:atmos a_str((const char*) esp_now_evt.data, esp_now_evt.len)`,
+                    time = time,
+                ])
+            } else {
+                emit(:espnow.send [
+                    mac    = mac,
+                    status = if `:boolean esp_now_evt.ok` => "success" => "fail",
+                    time   = time,
+                ])
+            }
+        }
+        false
+    },
+])

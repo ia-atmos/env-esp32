@@ -1,0 +1,16 @@
+catch	false	preferences.get_int : no namespace is open (call preferences.open first)
+[drv 0ms] preferences.open commands
+[drv 0ms] preferences.put_int start 69
+[drv 0ms] preferences.put_bool on true
+[drv 0ms] preferences.put_string name ultrat
+get	69	true	ultrat
+default	-1	nil
+is_key	true	false
+[drv 0ms] preferences.remove start
+removed	nil
+[drv 0ms] preferences.close commands
+[drv 0ms] preferences.open commands readonly
+reopen	ultrat
+catch	false	preferences.put_int : failed to write 'x': ESP_ERR_NVS_READ_ONLY
+catch	false	preferences.get_int : failed to read int 'name': ESP_ERR_NVS_TYPE_MISMATCH
+[drv 0ms] preferences.close commands

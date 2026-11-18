@@ -1,0 +1,24 @@
+;; preferences: put, get, defaults, keys, on the host
+
+val ok0, err0 = catch true { preferences.get_int("a") }
+print(:catch, ok0, err0)
+
+preferences.begin("commands")
+preferences.put_int("start", 69)
+preferences.put_bool("on", true)
+preferences.put_string("name", "ultrat")
+print(:get, preferences.get_int("start"), preferences.get_bool("on"),
+      preferences.get_string("name"))
+print(:default, preferences.get_int("stop", -1), preferences.get_string("x"))
+print(:is_key, preferences.is_key("start"), preferences.is_key("stop"))
+preferences.remove("start")
+print(:removed, preferences.get_int("start"))
+preferences.close()
+
+preferences.open("commands", true)
+print(:reopen, preferences.get_string("name"))
+val ok, err = catch true { preferences.put_int("x", 1) }
+print(:catch, ok, err)
+val ok2, err2 = catch true { preferences.get_int("name") }
+print(:catch, ok2, err2)
+preferences.close()
