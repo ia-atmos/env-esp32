@@ -4,6 +4,7 @@
 #
 #   make host       builds app/init.atm into build-host/init
 #   make test       runs tst/*.atm and app/init.atm
+#   ATMOS_ASAN=1 make test     the same, with the address sanitizer (leaks)
 #
 # The compiler is the submodule ext/lang (or LANG_DIR=<checkout>), which
 # must be built first: `git submodule update --init ext/lang` and

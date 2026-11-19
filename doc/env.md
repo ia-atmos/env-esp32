@@ -62,7 +62,8 @@ takes.
 
 ## Testing on the host
 
-`make test` builds each `tst/<t>.atm` (and `app/init.atm`, as `init`)
+`make test` (or `ATMOS_ASAN=1 make test`, which also fails on a leak)
+builds each `tst/<t>.atm` (and `app/init.atm`, as `init`)
 with the drivers of `drv/host/`, runs it with `tst/<t>.script` as its
 input, and compares what it prints with `tst/<t>.out`. The clock is
 virtual: a wait jumps to the next timer, fade or line of the script, so
