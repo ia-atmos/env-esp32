@@ -13,7 +13,7 @@ steps of an item are letters (`#3a`). From another session an item is
 |---|---|---|---|
 | #1 | The goal: replace the Lua implementation by ia-atmos/lang | decision | decided 2026-11-18 |
 | #2 | The first step: drivers in C, environment in Atmos, host tests, `app/init.atm`, `esp32/` | work | done 2026-11-18 |
-| #3 | Build for the board in this session (install ESP-IDF v6) | decision | waiting (asked 2026-11-18) |
+| #3 | Build for the board in this session (install ESP-IDF v6) | decision | decided 2026-11-19: #3a, install here |
 | #4 | Ownership: sync with Pedro's `pgvalle-research/atmos-esp32`, who tests on the board | decision | open |
 | #5 | `ultrat`: port it, or wait for Pedro | decision | open |
 | #6 | Remove the Lua implementation, once the C one runs on the board | work | open, after #3 and a board run |
@@ -26,21 +26,24 @@ steps of an item are letters (`#3a`). From another session an item is
 | #13 | `sdkconfig.old` is committed (Lua project) | remark | open, goes with #6 |
 | #14 | `A_STK_MAX` fixed at 4 MB, unchecked `malloc` (to `atmos-lang`) | defect | fixed in lang `36e36d8` |
 | #15 | The Lua version queues ESP-NOW events with `xQueueSendFromISR` from the Wi-Fi task (not an interrupt); `drv/esp32/espnow.c` uses `xQueueSend` | remark | open (Pedro's code) |
+| #16 | One environment for the board instead of one per driver; modules included only when used | decision | asked 2026-11-19 |
 
 ## Open items
 
-- **#3** Build for the board here. Recommendation: install ESP-IDF v6
-  (a few GB, redone in each new session unless saved as the setup
-  script of the environment); it checks that `drv/esp32/*.c` and the
-  runtime compile for Xtensa (#7), and gives the sizes in flash.
-  Espressif's QEMU only after, if the build works.
-  - #3a install here, now
-  - #3b leave the build to the author or Pedro, with the board
 - **#4** This is a copy of `pgvalle-research/atmos-esp32` at `d56bcb0`;
   Pedro's repository goes on. Nothing goes to `pgvalle-research`.
 - **#5** `atm/ultrat/` is unfinished in the Lua version: `ultrat.pins`
   vs `board.atm`, `motors` and `modes` undefined, `drv.move` vs
   `drv.Move`, `gpio.read(...) == true` where `read` gives 0/1.
+- **#16** Asked by the author (2026-11-19): "pq vários envs? Não estão
+  todos na placa? Há como dissocia-los?". Today the clock is the primary
+  and `gpio`, `ir`, `espnow` are secondaries, as in the Lua version.
+  - #16a (recommended) one environment `esp32`: one C queue that every
+    driver fills, one step that waits and drains it in arrival order;
+    `gpio`, `ir`, `espnow`, `preferences` become plain modules, each in
+    its own file, included only by a program that uses it (so a program
+    with no `espnow` does not link the Wi-Fi stack)
+  - #16b keep one environment per driver
 - **#6** Remove `lua/`, `main/`, `atm/`, `compile_lua.py`,
   `partitions.csv`, `sdkconfig.old`, the submodules of
   `pgvalle-research`, the root ESP-IDF project; move `esp32/` and
@@ -57,6 +60,8 @@ steps of an item are letters (`#3a`). From another session an item is
 
 ## Decided by the author
 
+- **#3** 2026-11-19: "#3 instale aqui". ESP-IDF v6.1.1 in `/opt/esp`
+  (outside the repository), from the mirror of Espressif.
 - **#1** 2026-11-18: replace. The Lua implementation (the Lua VM,
   `lua/`, the bytecode build, the submodules) gives place to
   ia-atmos/lang in this repository. His words: "nosso objetivo aqui é
