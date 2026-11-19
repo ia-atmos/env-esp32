@@ -60,9 +60,10 @@ if(NOT CMAKE_BUILD_EARLY_EXPANSION)
     set_source_files_properties("${APP_C}" PROPERTIES GENERATED TRUE)
 
     # the generic driver of the runtime, under another name: app_main
-    # (drv/esp32/main.c) calls it
+    # (drv/esp32/main.c) calls it; with no clock of its own (no
+    # nanosleep in newlib of ESP-IDF), since env/clock.atm is the clock
     set_source_files_properties("${ATMOS_LANG}/rt/main.c"
-        PROPERTIES COMPILE_DEFINITIONS "main=atmos_main")
+        PROPERTIES COMPILE_DEFINITIONS "main=atmos_main;ATM_NO_CLOCK")
 
     target_compile_definitions(${COMPONENT_LIB} PRIVATE A_STK_MAX=${ATMOS_STK})
     target_compile_options(${COMPONENT_LIB} PRIVATE -Wno-error -Wno-unused-parameter)

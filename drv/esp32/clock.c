@@ -5,8 +5,6 @@
 // timer of the program as the timeout. While it blocks, the idle task
 // runs and feeds the watchdog.
 
-#include <time.h>
-
 #include "esp_attr.h"
 #include "esp_rom_sys.h"
 #include "esp_timer.h"
@@ -60,21 +58,3 @@ int64_t drv_clock_wait (int64_t max_us) {
     return esp_timer_get_time() - t0;
 }
 
-// The generic driver of the runtime (rt/main.c) calls nanosleep when a
-// program registers no environment, which never happens here; newlib in
-// ESP-IDF v6 has no nanosleep, so the link needs this one.
-int nanosleep (const struct timespec* req, struct timespec* rem) {
-    int64_t us = (int64_t)req->tv_sec*1000000 + req->tv_nsec/1000;
-    int64_t tick_us = 1000000 / configTICK_RATE_HZ;
-    if (us >= tick_us) {
-        vTaskDelay((TickType_t) (us / tick_us));
-    }
-    if (us % tick_us > 0) {
-        esp_rom_delay_us((uint32_t) (us % tick_us));
-    }
-    if (rem != NULL) {
-        rem->tv_sec  = 0;
-        rem->tv_nsec = 0;
-    }
-    return 0;
-}
