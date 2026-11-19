@@ -21,7 +21,7 @@ steps of an item are letters (`#3a`). From another session an item is
 | #8 | Board drivers duplicate `main/*.c` until #6 | remark | open |
 | #9 | A loop with no await starves the idle task on the board (watchdog warning) | remark | open |
 | #10 | The host does not reject an IR repeat with no frame before it | defect | open (host only) |
-| #11 | Reals are doubles, emulated on the ESP32: measure (`atmos-lang#3`) | work | open, needs a board |
+| #11 | Reals are doubles, emulated on the ESP32: measure (`atmos-lang#3`) | work | `-DATMOS_REAL_FLOAT=ON` builds; size measured (image -4.6 KB); speed needs a board |
 | #12 | Compare with the Lua version on the board: flash, heap, wake-ups | work | flash done 2026-11-19; heap and wake-ups need a board |
 | #13 | `sdkconfig.old` is committed (Lua project) | remark | open, goes with #6 |
 | #14 | `A_STK_MAX` fixed at 4 MB, unchecked `malloc` (to `atmos-lang`) | defect | fixed in lang `36e36d8` |
@@ -65,8 +65,9 @@ steps of an item are letters (`#3a`). From another session an item is
 
 - Compiler: `atmos-lang` (session_011eECogKVQ7ZzmWCoMST2wK).
 - The rules of `pin`: `atmos-pin` (session_011eECogSDhkVfyt7qme5DLh).
+- Numeric types per system: `atmos-float` (session_011eECog5kQDX9i1eN1gKzDJ).
 - Environments in general: `atmos-envs` (session_011eECofYWTNPACTtUjHN4p6).
-- `ext/lang` is at `8361f88` (2026-11-19); host tests pass (also with ASan), the board builds with no warning.
+- `ext/lang` is at `d789bd0` (2026-11-19); host tests pass (also with ASan), the board builds with no warning.
 
 ## Decided by the author
 
