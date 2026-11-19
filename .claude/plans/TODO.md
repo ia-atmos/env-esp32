@@ -66,7 +66,7 @@ steps of an item are letters (`#3a`). From another session an item is
 - Compiler: `atmos-lang` (session_011eECogKVQ7ZzmWCoMST2wK).
 - The rules of `pin`: `atmos-pin` (session_011eECogSDhkVfyt7qme5DLh).
 - Environments in general: `atmos-envs` (session_011eECofYWTNPACTtUjHN4p6).
-- `ext/lang` is at `826e219` (2026-11-19); host tests pass (also with ASan), the board builds with no warning.
+- `ext/lang` is at `8361f88` (2026-11-19); host tests pass (also with ASan), the board builds with no warning.
 
 ## Decided by the author
 
