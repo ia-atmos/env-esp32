@@ -10,7 +10,7 @@
 static drv_evt_t esp_ir_evt;
 
 static AStatus esp_ir_start (AVal pin, AVal glitch, AVal idle) {
-    int64_t p, g, i;
+    int64_t p = 0, g = 0, i = 0;
     AStatus st = esp_int("ir.start", 1, pin, &p);
     if (st == A_OK) st = esp_opt("ir.start", 2, glitch, &g);
     if (st == A_OK) st = esp_opt("ir.start", 2, idle, &i);

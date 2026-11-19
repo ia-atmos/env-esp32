@@ -15,7 +15,7 @@ static int esp_prefs_commit (AVal c) {
 }
 
 static AStatus esp_prefs_open (AVal ns, AVal ro, AVal part) {
-    const char* n; const char* p = NULL;
+    const char* n = NULL; const char* p = NULL;
     AStatus st = esp_str("preferences.open", 1, ns, &n);
     if (st==A_OK && part.type!=A_NIL) st = esp_str("preferences.open", 3, part, &p);
     if (st == A_OK) st = esp_chk(drv_prefs_open(n, a_truthy(ro), p));
@@ -23,7 +23,7 @@ static AStatus esp_prefs_open (AVal ns, AVal ro, AVal part) {
 }
 
 static AStatus esp_prefs_put_int (AVal key, AVal v, AVal c) {
-    const char* k; int64_t i;
+    const char* k = NULL; int64_t i = 0;
     AStatus st = esp_prefs_key("preferences.put_int", key, &k);
     if (st == A_OK) st = esp_int("preferences.put_int", 2, v, &i);
     if (st == A_OK) st = esp_chk(drv_prefs_put_int(k, (int32_t)i, esp_prefs_commit(c)));
@@ -31,7 +31,7 @@ static AStatus esp_prefs_put_int (AVal key, AVal v, AVal c) {
 }
 
 static AStatus esp_prefs_get_int (AVal key, AVal* ret) {
-    const char* k; bool found = false; int32_t i = 0;
+    const char* k = NULL; bool found = false; int32_t i = 0;
     AStatus st = esp_prefs_key("preferences.get_int", key, &k);
     if (st == A_OK) st = esp_chk(drv_prefs_get_int(k, &found, &i));
     if (found) a_set(ret, a_int(i));
@@ -39,14 +39,14 @@ static AStatus esp_prefs_get_int (AVal key, AVal* ret) {
 }
 
 static AStatus esp_prefs_put_bool (AVal key, AVal v, AVal c) {
-    const char* k;
+    const char* k = NULL;
     AStatus st = esp_prefs_key("preferences.put_bool", key, &k);
     if (st == A_OK) st = esp_chk(drv_prefs_put_bool(k, a_truthy(v), esp_prefs_commit(c)));
     return st;
 }
 
 static AStatus esp_prefs_get_bool (AVal key, AVal* ret) {
-    const char* k; bool found = false; bool b = false;
+    const char* k = NULL; bool found = false; bool b = false;
     AStatus st = esp_prefs_key("preferences.get_bool", key, &k);
     if (st == A_OK) st = esp_chk(drv_prefs_get_bool(k, &found, &b));
     if (found) a_set(ret, a_bool(b));
@@ -54,7 +54,7 @@ static AStatus esp_prefs_get_bool (AVal key, AVal* ret) {
 }
 
 static AStatus esp_prefs_put_str (AVal key, AVal v, AVal c) {
-    const char* k; const char* s;
+    const char* k = NULL; const char* s = NULL;
     AStatus st = esp_prefs_key("preferences.put_string", key, &k);
     if (st == A_OK) st = esp_str("preferences.put_string", 2, v, &s);
     if (st == A_OK) st = esp_chk(drv_prefs_put_str(k, s, esp_prefs_commit(c)));
@@ -64,7 +64,7 @@ static AStatus esp_prefs_put_str (AVal key, AVal v, AVal c) {
 static const char* esp_prefs_s;
 
 static AStatus esp_prefs_get_str (AVal key, int* found) {
-    const char* k; bool f = false;
+    const char* k = NULL; bool f = false;
     AStatus st = esp_prefs_key("preferences.get_string", key, &k);
     if (st == A_OK) st = esp_chk(drv_prefs_get_str(k, &f, &esp_prefs_s));
     *found = f;
@@ -72,7 +72,7 @@ static AStatus esp_prefs_get_str (AVal key, int* found) {
 }
 
 static AStatus esp_prefs_is_key (AVal key, AVal* ret) {
-    const char* k; bool yes = false;
+    const char* k = NULL; bool yes = false;
     AStatus st = esp_prefs_key("preferences.is_key", key, &k);
     if (st == A_OK) st = esp_chk(drv_prefs_is_key(k, &yes));
     a_set(ret, a_bool(yes));
@@ -80,7 +80,7 @@ static AStatus esp_prefs_is_key (AVal key, AVal* ret) {
 }
 
 static AStatus esp_prefs_remove (AVal key, AVal c) {
-    const char* k;
+    const char* k = NULL;
     AStatus st = esp_prefs_key("preferences.remove", key, &k);
     if (st == A_OK) st = esp_chk(drv_prefs_remove(k, esp_prefs_commit(c)));
     return st;

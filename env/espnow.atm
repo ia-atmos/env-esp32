@@ -16,14 +16,14 @@ static AStatus esp_now_mac (const char* fn, AVal mac, const char** out) {
 }
 
 static AStatus esp_now_add_peer (AVal mac) {
-    const char* m;
+    const char* m = NULL;
     AStatus st = esp_now_mac("espnow.add_peer", mac, &m);
     if (st == A_OK) st = esp_chk(drv_espnow_add_peer(m));
     return st;
 }
 
 static AStatus esp_now_send (AVal mac, AVal data) {
-    const char* m; const char* d;
+    const char* m = NULL; const char* d = NULL;
     AStatus st = esp_now_mac("espnow.send", mac, &m);
     if (st == A_OK) st = esp_str("espnow.send", 2, data, &d);
     if (st == A_OK) {
@@ -33,7 +33,7 @@ static AStatus esp_now_send (AVal mac, AVal data) {
 }
 
 static AStatus esp_now_set_channel (AVal ch) {
-    int64_t c;
+    int64_t c = 0;
     AStatus st = esp_int("espnow.set_channel", 1, ch, &c);
     if (st == A_OK) st = esp_chk(drv_espnow_set_channel((int)c));
     return st;
