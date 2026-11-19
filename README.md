@@ -5,7 +5,7 @@ on the ESP32. It holds two implementations:
 
 | | C (ia-atmos/lang) | Lua (reference) |
 |---|---|---|
-| State | replaces the Lua one; tested on the host, not yet on the board | runs on the board |
+| State | replaces the Lua one; tested on the host, builds for the board, not yet run on it | runs on the board |
 | Program | `app/init.atm` | `atm/init.atm` |
 | Environment | `env/*.atm` over `drv/` ([doc/env.md](doc/env.md)) | `lua/esp32/*.lua` over `main/*.c` ([doc/api.md](doc/api.md)) |
 | Build | `make test` (host), `cd esp32 && idf.py build` (board) | `idf.py build` at the root |

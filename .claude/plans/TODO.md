@@ -17,16 +17,20 @@ steps of an item are letters (`#3a`). From another session an item is
 | #4 | Ownership: sync with Pedro's `pgvalle-research/atmos-esp32`, who tests on the board | decision | open |
 | #5 | `ultrat`: port it, or wait for Pedro | decision | open |
 | #6 | Remove the Lua implementation, once the C one runs on the board | work | open, after #3 and a board run |
-| #7 | `drv/esp32/*.c` and `esp32/` never compiled | work | open, needs #3 |
+| #7 | `drv/esp32/*.c` and `esp32/` never compiled | work | done 2026-11-19: builds with ESP-IDF v6.1.1, no warning |
 | #8 | Board drivers duplicate `main/*.c` until #6 | remark | open |
 | #9 | A loop with no await starves the idle task on the board (watchdog warning) | remark | open |
 | #10 | The host does not reject an IR repeat with no frame before it | defect | open (host only) |
 | #11 | Reals are doubles, emulated on the ESP32: measure (`atmos-lang#3`) | work | open, needs a board |
-| #12 | Compare with the Lua version on the board: flash, heap, wake-ups | work | open, needs a board |
+| #12 | Compare with the Lua version on the board: flash, heap, wake-ups | work | flash done 2026-11-19; heap and wake-ups need a board |
 | #13 | `sdkconfig.old` is committed (Lua project) | remark | open, goes with #6 |
 | #14 | `A_STK_MAX` fixed at 4 MB, unchecked `malloc` (to `atmos-lang`) | defect | fixed in lang `36e36d8` |
 | #15 | The Lua version queues ESP-NOW events with `xQueueSendFromISR` from the Wi-Fi task (not an interrupt); `drv/esp32/espnow.c` uses `xQueueSend` | remark | open (Pedro's code) |
 | #16 | One environment for the board instead of one per driver; modules included only when used | decision | asked 2026-11-19 |
+| #17 | A native result written over an Atmos variable leaked the default it replaced (`get_int`, `get_bool` with a string or table default) | defect | fixed 2026-11-19 (`a_set`), test under `ATMOS_ASAN=1 make test` |
+| #18 | The board image filled 94% of the default 1 MB app partition | defect | fixed 2026-11-19: own table, app of 4032 KB, 76% free |
+| #19 | Save the ESP-IDF install as the setup script of the environment `ceu-atmos`, only for sessions with `env-esp32` | work | the approval was interrupted, not refused |
+| #20 | To `atmos-lang`: `nanosleep` in `rt/main.c`, `$x = ...` in the manual, warnings of the generated C | defect | fixed in lang (`ee17162`, `dc94c6f`, `7b0bf06`); `ext/lang` at `826e219`, built with `ATM_NO_CLOCK` |
 
 ## Open items
 
@@ -50,13 +54,19 @@ steps of an item are letters (`#3a`). From another session an item is
   `app/` to the root.
 - **#11, #12** On the host, `app/init.atm` peaks at about 31 KB of heap
   (64-bit pointers) and needs fewer than 64 entries of value stack.
+  Flash, both built with ESP-IDF v6.1.1 and `app/init.atm` /
+  `atm/init.atm`: C image 989 KB (our component 152 KB: runtime about
+  105 KB, generated C of the program and the environment 79 KB, drivers
+  17 KB, before `--gc-sections`); Lua image 1012 KB (Lua VM 114 KB,
+  bindings 14 KB) plus 66 KB of bytecode in LittleFS. The Wi-Fi stack is
+  about 330 KB of both, linked even when ESP-NOW is not used (#16).
 
 ## Sessions
 
 - Compiler: `atmos-lang` (session_011eECogKVQ7ZzmWCoMST2wK).
 - The rules of `pin`: `atmos-pin` (session_011eECogSDhkVfyt7qme5DLh).
 - Environments in general: `atmos-envs` (session_011eECofYWTNPACTtUjHN4p6).
-- `ext/lang` is at `907fee9` (2026-11-19); the host tests pass there, with no warnings.
+- `ext/lang` is at `826e219` (2026-11-19); host tests pass (also with ASan), the board builds with no warning.
 
 ## Decided by the author
 
