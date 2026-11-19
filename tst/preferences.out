@@ -14,3 +14,8 @@ reopen	ultrat
 catch	false	preferences.put_int : failed to write 'x': ESP_ERR_NVS_READ_ONLY
 catch	false	preferences.get_int : failed to read int 'name': ESP_ERR_NVS_TYPE_MISMATCH
 [drv 0ms] preferences.close commands
+[drv 0ms] preferences.open leak
+[drv 0ms] preferences.put_int k 7
+[drv 0ms] preferences.put_bool b false
+replace	7	false
+[drv 0ms] preferences.close leak

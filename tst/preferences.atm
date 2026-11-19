@@ -22,3 +22,10 @@ print(:catch, ok, err)
 val ok2, err2 = catch true { preferences.get_int("name") }
 print(:catch, ok2, err2)
 preferences.close()
+
+;; a found key replaces a default that is a string or a table
+preferences.open("leak")
+preferences.put_int("k", 7)
+preferences.put_bool("b", false)
+print(:replace, preferences.get_int("k", "x" ++ "y"), preferences.get_bool("b", [1]))
+preferences.close()

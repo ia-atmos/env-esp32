@@ -34,7 +34,7 @@ static AStatus esp_prefs_get_int (AVal key, AVal* ret) {
     const char* k; bool found = false; int32_t i = 0;
     AStatus st = esp_prefs_key("preferences.get_int", key, &k);
     if (st == A_OK) st = esp_chk(drv_prefs_get_int(k, &found, &i));
-    if (found) *ret = a_int(i);
+    if (found) a_set(ret, a_int(i));
     return st;
 }
 
@@ -49,7 +49,7 @@ static AStatus esp_prefs_get_bool (AVal key, AVal* ret) {
     const char* k; bool found = false; bool b = false;
     AStatus st = esp_prefs_key("preferences.get_bool", key, &k);
     if (st == A_OK) st = esp_chk(drv_prefs_get_bool(k, &found, &b));
-    if (found) *ret = a_bool(b);
+    if (found) a_set(ret, a_bool(b));
     return st;
 }
 
@@ -75,7 +75,7 @@ static AStatus esp_prefs_is_key (AVal key, AVal* ret) {
     const char* k; bool yes = false;
     AStatus st = esp_prefs_key("preferences.is_key", key, &k);
     if (st == A_OK) st = esp_chk(drv_prefs_is_key(k, &yes));
-    *ret = a_bool(yes);
+    a_set(ret, a_bool(yes));
     return st;
 }
 

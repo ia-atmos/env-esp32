@@ -22,7 +22,7 @@ static AStatus esp_gpio_read (AVal pin, AVal* ret) {
     int64_t p; int v = 0;
     AStatus st = esp_int("gpio.read", 1, pin, &p);
     if (st == A_OK) st = esp_chk(drv_gpio_read((int)p, &v));
-    *ret = a_int(v);
+    a_set(ret, a_int(v));
     return st;
 }
 
@@ -68,7 +68,7 @@ static AStatus esp_gpio_read_adc (AVal pin, AVal atten, AVal* ret) {
     }
     int raw = 0;
     if (st == A_OK) st = esp_chk(drv_gpio_read_adc((int)p, a, &raw));
-    *ret = a_int(raw);
+    a_set(ret, a_int(raw));
     return st;
 }
 
