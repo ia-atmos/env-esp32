@@ -7,7 +7,7 @@ on the ESP32. It holds two implementations:
 |---|---|---|
 | State | replaces the Lua one; tested on the host, builds for the board, not yet run on it | runs on the board |
 | Program | `app/init.atm` | `atm/init.atm` |
-| Environment | `env/*.atm` over `drv/` ([doc/env.md](doc/env.md)) | `lua/esp32/*.lua` over `main/*.c` ([doc/api.md](doc/api.md)) |
+| Environment | `env/esp32.atm` and one module per driver, over `drv/` ([doc/env.md](doc/env.md)) | `lua/esp32/*.lua` over `main/*.c` ([doc/api.md](doc/api.md)) |
 | Build | `make test` (host), `cd esp32 && idf.py build` (board) | `idf.py build` at the root |
 
 The Lua implementation is removed once the C one runs on the board.

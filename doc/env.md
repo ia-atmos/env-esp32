@@ -6,6 +6,17 @@ replaces the Lua implementation (`lua/esp32/`, documented in
 [api.md](api.md)), with the same modules, functions and events, except
 for the differences listed at the end.
 
+A program includes the modules it uses (each includes the core
+`env/esp32.atm`), and only their drivers are linked:
+
+```
+include "../env/gpio.atm"
+include "../env/ir.atm"
+
+ir.start(15)
+val k = await :ir [repeat=false]
+```
+
 ```
 $ make -C ext/lang                          # the compiler
 $ make test                                 # the tests, on the host
@@ -16,18 +27,25 @@ $ cd esp32 && idf.py build flash monitor    # the board (ESP-IDF v6)
 
 | Layer | Where | What |
 |---|---|---|
-| Program | `app/*.atm` | Atmos, with the modules below as globals |
-| Environment | `env/*.atm` | the modules, in Atmos; native literals call the drivers |
+| Program | `app/*.atm` | Atmos; includes the modules it uses |
+| Environment | `env/esp32.atm` | the one environment of the board: the clock and the events of all drivers |
+| Modules | `env/<module>.atm` | functions in Atmos; native literals call the drivers |
 | Drivers | `drv/drv.h` | plain C, no Lua and no Atmos; a failure is a message |
 | Board | `drv/esp32/*.c`, `esp32/` | ESP-IDF: GPIO, LEDC, ADC, RMT, ESP-NOW, NVS |
 | Host | `drv/host/host.c`, `Makefile` | a simulation with a virtual clock and scripted input |
 
-The clock is the primary environment: each step waits until the nearest
-timer of the program, or until a driver queues an event, and emits the
-time that passed (in microseconds). On the board the wait blocks on a
-semaphore that the interrupts give, so the CPU idles between events.
-Each driver with events (`gpio`, `ir`, `espnow`) is a secondary
-environment, whose step drains its queue and emits.
+There is one environment. Its step waits until the nearest timer of the
+program, or until a driver queues an event, and emits the time that
+passed; then it emits the events that the drivers queued, in the order
+they happened, whatever driver queued them (each driver adds a source in
+`drv/src.c`, and the oldest event of all goes first). On the board the
+wait blocks on a semaphore that the interrupts give, so the CPU idles
+between events. A module with events (`gpio`, `ir`, `espnow`) registers
+in `esp32.drain` the function that emits the oldest event of its driver.
+
+For `app/init.atm` (`gpio`, `ir`, `debug`, no `espnow`), the image is
+357 KB with 18 KB of static RAM; a program that also includes `espnow`
+links the Wi-Fi stack, and its image is about 980 KB.
 
 ## Modules
 
@@ -47,8 +65,8 @@ takes.
 
 ## Differences from the Lua version
 
-- There is no `require`: the program is compiled with the environment
-  (`atmos -e env/esp32.atm`), whose modules are globals.
+- There is no `require`: the program includes the modules it uses, whose
+  names are globals.
 - `:gpio.pwm_fade` is a subtag of `:gpio`: `await :gpio` also awakes on
   a fade (a pattern with a field, as `:gpio [pin=4]`, does not).
 - `:ir` gives `raw` as an integer, not as a hexadecimal string: integers

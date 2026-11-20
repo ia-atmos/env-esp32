@@ -26,10 +26,10 @@ steps of an item are letters (`#3a`). From another session an item is
 | #13 | `sdkconfig.old` is committed (Lua project) | remark | open, goes with #6 |
 | #14 | `A_STK_MAX` fixed at 4 MB, unchecked `malloc` (to `atmos-lang`) | defect | fixed in lang `36e36d8` |
 | #15 | The Lua version queues ESP-NOW events with `xQueueSendFromISR` from the Wi-Fi task (not an interrupt); `drv/esp32/espnow.c` uses `xQueueSend` | remark | open (Pedro's code) |
-| #16 | One environment for the board instead of one per driver; modules included only when used | decision | asked 2026-11-19 |
+| #16 | One environment for the board instead of one per driver; modules included only when used | decision | decided 2026-11-20 (#16a), done: image of init 989 to 357 KB |
 | #17 | A native result written over an Atmos variable leaked the default it replaced (`get_int`, `get_bool` with a string or table default) | defect | fixed 2026-11-19 (`a_set`), test under `ATMOS_ASAN=1 make test` |
 | #18 | The board image filled 94% of the default 1 MB app partition | defect | fixed 2026-11-19: own table, app of 4032 KB, 76% free |
-| #19 | Save the ESP-IDF install as the setup script of the environment `ceu-atmos`, only for sessions with `env-esp32` | work | the approval was interrupted, not refused |
+| #19 | Save the ESP-IDF install as the setup script of the environment `ceu-atmos`, only for sessions with `env-esp32` | work | approved 2026-11-20; the card was interrupted twice by restarts; waits for him to answer it |
 | #21 | `atmos-float` branch `float` (32-bit integers, time in ms): measured on the board build in a scratch copy, not adopted (the branch may change) | work | reported 2026-11-20: AVal 16 to 8 bytes, our component -16%; a Makefile defect of the branch reported |
 | #20 | To `atmos-lang`: `nanosleep` in `rt/main.c`, `$x = ...` in the manual, warnings of the generated C | defect | fixed in lang (`ee17162`, `dc94c6f`, `7b0bf06`); `ext/lang` at `826e219`, built with `ATM_NO_CLOCK` |
 
@@ -40,15 +40,6 @@ steps of an item are letters (`#3a`). From another session an item is
 - **#5** `atm/ultrat/` is unfinished in the Lua version: `ultrat.pins`
   vs `board.atm`, `motors` and `modes` undefined, `drv.move` vs
   `drv.Move`, `gpio.read(...) == true` where `read` gives 0/1.
-- **#16** Asked by the author (2026-11-19): "pq vários envs? Não estão
-  todos na placa? Há como dissocia-los?". Today the clock is the primary
-  and `gpio`, `ir`, `espnow` are secondaries, as in the Lua version.
-  - #16a (recommended) one environment `esp32`: one C queue that every
-    driver fills, one step that waits and drains it in arrival order;
-    `gpio`, `ir`, `espnow`, `preferences` become plain modules, each in
-    its own file, included only by a program that uses it (so a program
-    with no `espnow` does not link the Wi-Fi stack)
-  - #16b keep one environment per driver
 - **#6** Remove `lua/`, `main/`, `atm/`, `compile_lua.py`,
   `partitions.csv`, `sdkconfig.old`, the submodules of
   `pgvalle-research`, the root ESP-IDF project; move `esp32/` and
@@ -72,6 +63,8 @@ steps of an item are letters (`#3a`). From another session an item is
 
 ## Decided by the author
 
+- 2026-11-20: "Ok para todos. Vá em frente até onde conseguir": #16
+  (#16a, one environment), #19, #4, #5, with the recommendations.
 - **#3** 2026-11-19: "#3 instale aqui". ESP-IDF v6.1.1 in `/opt/esp`
   (outside the repository), from the mirror of Espressif.
 - **#1** 2026-11-18: replace. The Lua implementation (the Lua VM,
