@@ -102,7 +102,9 @@ the main task, at the same priority as the idle task of FreeRTOS, so a
 loop with no `await` (or a long computation) keeps the idle task from
 running: after 5 seconds the task watchdog prints a warning (it does not
 reset the board). The Lua version has the same limit. A long loop should
-await from time to time, as `await(0)`, which lets the clock step.
+await a short time from time to time, as `await(1ms)`, which blocks the
+main task for a tick of FreeRTOS (`await(0)` does not: it ends at once,
+in the same reaction).
 
 ## Testing on the host
 
