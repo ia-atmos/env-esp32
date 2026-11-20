@@ -95,6 +95,15 @@ microseconds wraps after 35 minutes (in ms, after 24 days), and the
 `app/init.atm`, the three options together shrink our component from
 159642 to 134224 bytes and the static RAM by 912 bytes.
 
+## Reactions that do not await
+
+A reaction runs until every task awaits again. On the board it runs in
+the main task, at the same priority as the idle task of FreeRTOS, so a
+loop with no `await` (or a long computation) keeps the idle task from
+running: after 5 seconds the task watchdog prints a warning (it does not
+reset the board). The Lua version has the same limit. A long loop should
+await from time to time, as `await(0)`, which lets the clock step.
+
 ## Testing on the host
 
 `make test` (or `ATMOS_ASAN=1 make test`, which also fails on a leak)
