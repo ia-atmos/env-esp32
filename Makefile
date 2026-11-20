@@ -42,7 +42,10 @@ $(BUILD)/tst/%: tst/%.atm $(ENVS) $(DRV)
 	    $(ATMOS) -e $(ENV) -o $@ $<
 
 # Each tst/<t>.atm runs with tst/<t>.script (if any) as its input, and
-# its output must be tst/<t>.out. The test `init` is app/init.atm.
+# its output must be tst/<t>.out (tst/<t>.out.ms with ATMOS_TIME=ms,
+# where the times print in milliseconds). The test `init` is
+# app/init.atm. The numeric options of the compiler (ATMOS_REAL=float,
+# ATMOS_INT=32, ATMOS_TIME=ms) pass through the environment.
 TSTS := $(wildcard tst/*.atm) tst/init.atm
 
 test: $(TSTS:tst/%.atm=$(BUILD)/tst/%)
@@ -50,7 +53,8 @@ test: $(TSTS:tst/%.atm=$(BUILD)/tst/%)
 	    s=tst/$$t.script; [ -f $$s ] || s=/dev/null; \
 	    ESP32_HOST_TRACE=1 ESP32_HOST_SCRIPT=$$s $(BUILD)/tst/$$t \
 	        > $(BUILD)/tst/$$t.out 2>&1; \
-	    if diff -u tst/$$t.out $(BUILD)/tst/$$t.out; then \
+	    o=tst/$$t.out; [ "$$ATMOS_TIME" = ms ] && [ -f $$o.ms ] && o=$$o.ms; \
+	    if diff -u $$o $(BUILD)/tst/$$t.out; then \
 	        echo "ok   $$t"; \
 	    else \
 	        echo "FAIL $$t"; exit 1; \
