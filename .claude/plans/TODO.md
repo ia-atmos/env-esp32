@@ -31,6 +31,7 @@ steps of an item are letters (`#3a`). From another session an item is
 | #18 | The board image filled 94% of the default 1 MB app partition | defect | fixed 2026-11-19: own table, app of 4032 KB, 76% free |
 | #19 | Save the ESP-IDF install as the setup script of the environment `ceu-atmos`, only for sessions with `env-esp32` | work | approved 2026-11-20; the card was interrupted twice by restarts; waits for him to answer it |
 | #21 | `atmos-float` branch `float` (32-bit integers, time in ms): measured on the board build in a scratch copy, not adopted (the branch may change) | work | reported 2026-11-20: AVal 16 to 8 bytes, our component -16%; a Makefile defect of the branch reported |
+| #22 | Soft-float cost on a board with no FPU (esp32c3), asked by atmos-float (#7 there) | work | done 2026-11-20: soft-float arithmetic in ROM (0 B flash), libm 15.2 KB vs 10.9 KB on the ESP32; sent |
 | #20 | To `atmos-lang`: `nanosleep` in `rt/main.c`, `$x = ...` in the manual, warnings of the generated C | defect | fixed in lang (`ee17162`, `dc94c6f`, `7b0bf06`); `ext/lang` at `826e219`, built with `ATM_NO_CLOCK` |
 
 ## Open items
