@@ -60,6 +60,23 @@ takes.
   the count is low when nothing happens.
 - `pin` is a keyword of Atmos, and cannot name a variable or parameter.
 
+## Numeric options
+
+The compiler has three build options for small targets; the runtime, the
+generated C and the drivers must be built with the same ones:
+
+| Option | Board (`idf.py -D...=ON`) | Host (`make test`) | Effect |
+|---|---|---|---|
+| reals of 32 bits | `ATMOS_REAL_FLOAT` | `ATMOS_REAL=float` | a real is a C `float`, in the FPU of the ESP32 |
+| integers of 32 bits | `ATMOS_INT_32` | `ATMOS_INT=32` | with 32-bit reals, a value has 8 bytes instead of 16 |
+| time in milliseconds | `ATMOS_TIME_MS` | `ATMOS_TIME=ms` | timers, the time emitted and the `time` of the events are in ms |
+
+With 32-bit integers, use milliseconds: a time since boot in
+microseconds wraps after 35 minutes (in ms, after 24 days), and the
+`raw` of an IR frame above `0x7FFFFFFF` wraps to a negative number. For
+`app/init.atm`, the three options together shrink our component from
+159642 to 134224 bytes and the static RAM by 912 bytes.
+
 ## Testing on the host
 
 `make test` (or `ATMOS_ASAN=1 make test`, which also fails on a leak)
