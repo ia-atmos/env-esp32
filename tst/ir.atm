@@ -1,5 +1,7 @@
 ;; ir: decoded frames as events, repeats, stats, on the host
 
+include "../env/ir.atm"
+
 ir.start(15)
 val e = await :ir [repeat=false]
 print(:ir, e.protocol, e.address, e.command, e.raw, e.bits, e.repeat, e.time)

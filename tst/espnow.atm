@@ -1,5 +1,7 @@
 ;; espnow: messages in and out, on the host
 
+include "../env/espnow.atm"
+
 espnow.init()
 print(:mac, espnow.get_mac(), espnow.get_channel())
 espnow.set_channel(6)

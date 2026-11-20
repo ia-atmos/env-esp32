@@ -13,12 +13,11 @@
 LANG_DIR ?= ext/lang
 ATMOS    := $(abspath $(LANG_DIR))/atmos
 
-ENV   := env/esp32.atm
-DRV   := drv/drv.h drv/err.c drv/host/host.c
+DRV   := drv/drv.h drv/err.c drv/src.c drv/host/host.c
 ENVS  := $(wildcard env/*.atm)
 
 HOST_CFLAGS  := -O1 -I$(CURDIR)/drv
-HOST_LDFLAGS := $(CURDIR)/drv/err.c $(CURDIR)/drv/host/host.c
+HOST_LDFLAGS := $(CURDIR)/drv/err.c $(CURDIR)/drv/src.c $(CURDIR)/drv/host/host.c
 
 BUILD := build-host
 
@@ -29,17 +28,17 @@ host: $(BUILD)/init
 $(BUILD)/init: app/init.atm $(ENVS) $(DRV)
 	@mkdir -p $(BUILD)
 	ATMOS_CFLAGS="$(HOST_CFLAGS)" ATMOS_LDFLAGS="$(HOST_LDFLAGS)" \
-	    $(ATMOS) -e $(ENV) -o $@ $<
+	    $(ATMOS) -o $@ $<
 
 $(BUILD)/tst/init: app/init.atm $(ENVS) $(DRV)
 	@mkdir -p $(BUILD)/tst
 	ATMOS_CFLAGS="$(HOST_CFLAGS)" ATMOS_LDFLAGS="$(HOST_LDFLAGS)" \
-	    $(ATMOS) -e $(ENV) -o $@ $<
+	    $(ATMOS) -o $@ $<
 
 $(BUILD)/tst/%: tst/%.atm $(ENVS) $(DRV)
 	@mkdir -p $(BUILD)/tst
 	ATMOS_CFLAGS="$(HOST_CFLAGS)" ATMOS_LDFLAGS="$(HOST_LDFLAGS)" \
-	    $(ATMOS) -e $(ENV) -o $@ $<
+	    $(ATMOS) -o $@ $<
 
 # Each tst/<t>.atm runs with tst/<t>.script (if any) as its input, and
 # its output must be tst/<t>.out (tst/<t>.out.ms with ATMOS_TIME=ms,

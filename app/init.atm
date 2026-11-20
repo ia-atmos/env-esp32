@@ -3,7 +3,11 @@
 ;; of the clock per second.
 ;;
 ;; The same program as atm/init.atm (the Lua version), for ia-atmos/lang
-;; with the environment env/esp32.atm.
+;; with the modules of env/ that it uses.
+
+include "../env/gpio.atm"
+include "../env/ir.atm"
+include "../env/debug.atm"
 
 spawn debug.Mem()
 spawn debug.Fps()

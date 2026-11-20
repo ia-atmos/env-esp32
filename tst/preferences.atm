@@ -1,5 +1,7 @@
 ;; preferences: put, get, defaults, keys, on the host
 
+include "../env/preferences.atm"
+
 val ok0, err0 = catch true { preferences.get_int("a") }
 print(:catch, ok0, err0)
 

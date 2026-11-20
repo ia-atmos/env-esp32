@@ -1,5 +1,7 @@
 ;; gpio: pins, watches, PWM and fades, on the host
 
+include "../env/gpio.atm"
+
 gpio.setup(2, "output")
 gpio.write(2, true)
 print(:read, gpio.read(2))

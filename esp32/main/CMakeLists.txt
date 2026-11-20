@@ -1,6 +1,6 @@
 # The component of the program: the drivers (drv/esp32/), the runtime of
 # ia-atmos/lang (rt/*.c), and the C that the compiler emits for the
-# program with the environment env/esp32.atm.
+# program, which includes the modules of env/ that it uses.
 
 get_filename_component(REPO "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
 
@@ -24,6 +24,7 @@ idf_component_register(
         ${RT_SRC}
         "${APP_C}"
         "${REPO}/drv/err.c"
+        "${REPO}/drv/src.c"
         "${REPO}/drv/esp32/main.c"
         "${REPO}/drv/esp32/clock.c"
         "${REPO}/drv/esp32/mem.c"
@@ -58,7 +59,7 @@ if(NOT CMAKE_BUILD_EARLY_EXPANSION)
     file(GLOB_RECURSE APP_SRC "${APP_DIR}/*.atm")
     add_custom_command(
         OUTPUT "${APP_C}"
-        COMMAND "${ATMOS}" -c -e env/esp32.atm "${ATMOS_APP}" > "${APP_C}"
+        COMMAND "${ATMOS}" -c "${ATMOS_APP}" > "${APP_C}"
         WORKING_DIRECTORY "${REPO}"
         DEPENDS "${ATMOS}" ${ENV_SRC} ${APP_SRC}
         COMMENT "Compiling ${ATMOS_APP} to C"
