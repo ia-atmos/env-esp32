@@ -14,8 +14,8 @@ steps of an item are letters (`#3a`). From another session an item is
 | #1 | The goal: replace the Lua implementation by ia-atmos/lang | decision | decided 2026-11-18 |
 | #2 | The first step: drivers in C, environment in Atmos, host tests, `app/init.atm`, `esp32/` | work | done 2026-11-18 |
 | #3 | Build for the board in this session (install ESP-IDF v6) | decision | decided 2026-11-19: #3a, install here |
-| #4 | Ownership: sync with Pedro's `pgvalle-research/atmos-esp32`, who tests on the board | decision | open |
-| #5 | `ultrat`: port it, or wait for Pedro | decision | open |
+| #4 | Ownership: sync with Pedro's `pgvalle-research/atmos-esp32`, who tests on the board | decision | decided 2026-11-20: follow his repository one way (driver fixes come here), nothing goes there; Pedro or the author runs on the board |
+| #5 | `ultrat`: port it, or wait for Pedro | decision | decided 2026-11-20 (port); done in `app/ultrat/`, with 11 fixes and 2 questions in its README |
 | #6 | Remove the Lua implementation, once the C one runs on the board | work | open, after #3 and a board run |
 | #7 | `drv/esp32/*.c` and `esp32/` never compiled | work | done 2026-11-19: builds with ESP-IDF v6.1.1, no warning |
 | #8 | Board drivers duplicate `main/*.c` until #6 | remark | open |
@@ -59,7 +59,7 @@ steps of an item are letters (`#3a`). From another session an item is
 - The rules of `pin`: `atmos-pin` (session_011eECogSDhkVfyt7qme5DLh).
 - Numeric types per system: `atmos-float` (session_011eECog5kQDX9i1eN1gKzDJ).
 - Environments in general: `atmos-envs` (session_011eECofYWTNPACTtUjHN4p6).
-- `ext/lang` is at `d789bd0` (2026-11-19); host tests pass (also with ASan), the board builds with no warning.
+- `ext/lang` is at `55b1fee` (2026-11-20); host tests pass (also with ASan), the board builds with no warning.
 
 ## Decided by the author
 
