@@ -30,6 +30,7 @@ steps of an item are letters (`#3a`). From another session an item is
 | #17 | A native result written over an Atmos variable leaked the default it replaced (`get_int`, `get_bool` with a string or table default) | defect | fixed 2026-11-19 (`a_set`), test under `ATMOS_ASAN=1 make test` |
 | #18 | The board image filled 94% of the default 1 MB app partition | defect | fixed 2026-11-19: own table, app of 4032 KB, 76% free |
 | #19 | Save the ESP-IDF install as the setup script of the environment `ceu-atmos`, only for sessions with `env-esp32` | work | the approval was interrupted, not refused |
+| #21 | `atmos-float` branch `float` (32-bit integers, time in ms): measured on the board build in a scratch copy, not adopted (the branch may change) | work | reported 2026-11-20: AVal 16 to 8 bytes, our component -16%; a Makefile defect of the branch reported |
 | #20 | To `atmos-lang`: `nanosleep` in `rt/main.c`, `$x = ...` in the manual, warnings of the generated C | defect | fixed in lang (`ee17162`, `dc94c6f`, `7b0bf06`); `ext/lang` at `826e219`, built with `ATM_NO_CLOCK` |
 
 ## Open items
