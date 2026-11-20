@@ -8,6 +8,9 @@
 // Input comes from the script in ESP32_HOST_SCRIPT, one line each:
 //
 //      <ms> pin <pin> <level>                      a pin goes to a level
+//      0 hold <pin> <level>        a pin is at a level from boot (as a
+//                  button held at reset): a pull-up or pull-down of the
+//                  program does not change it
 //      <ms> ir <protocol> <address> <command> [repeat]
 //                  (a repeat repeats the last frame, as on the board, and
 //                  with no frame before it counts as invalid)
@@ -119,6 +122,7 @@ static struct {
     int level;
     int watch;      // 0: no; 1: rising; 2: falling; 3: both
     int pwm;        // channel, or -1
+    bool held;      // the level comes from the script: pulls do not change it
 } PINS[PIN_COUNT];
 
 static struct {
@@ -128,6 +132,7 @@ static struct {
 } PWM[PWM_CHANNELS];
 
 static bool PINS_INIT = false;
+static void script_read (void);
 
 static void pins_init (void) {
     if (PINS_INIT) {
@@ -138,6 +143,7 @@ static void pins_init (void) {
         PINS[i].pwm = -1;
     }
     PINS_INIT = true;
+    script_read();      // for its `hold` lines
 }
 
 static bool valid_pin (int pin) {
@@ -242,6 +248,7 @@ static void pending_fire (pending_t p) {
         }
         case P_PIN:
             pins_init();
+            PINS[p.a].held = true;
             pin_change(p.a, p.b);
             break;
         case P_IR:
@@ -323,7 +330,15 @@ static void script_read (void) {
         }
         pending_t p = { .at = (int64_t)ms * 1000 };
         const char* rest = s + off;
-        if (!strcmp(what, "pin")) {
+        if (!strcmp(what, "hold")) {
+            int pin, level;
+            if (ms!=0 || sscanf(rest, "%d %d", &pin, &level)!=2 || !valid_pin(pin)) {
+                script_fail(path, n, line);
+            }
+            PINS[pin].level = !!level;
+            PINS[pin].held  = true;
+            continue;
+        } else if (!strcmp(what, "pin")) {
             p.kind = P_PIN;
             if (sscanf(rest, "%d %d", &p.a, &p.b)!=2 || !valid_pin(p.a)) {
                 script_fail(path, n, line);
@@ -465,7 +480,9 @@ const char* drv_gpio_setup (int pin, const char* mode) {
     }
     PINS[pin].mode = m;
     PINS[pin].pwm  = -1;
-    if (!strcmp(mode, "input_pullup")) {
+    if (PINS[pin].held) {
+        // the level comes from the script
+    } else if (!strcmp(mode, "input_pullup")) {
         PINS[pin].level = 1;
     } else if (!strcmp(mode, "input_pulldown")) {
         PINS[pin].level = 0;
