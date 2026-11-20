@@ -56,7 +56,7 @@ atmos.env([
                 raw      = `:number (int64_t) esp_ir_evt.u.ir.raw`,
                 bits     = `:number esp_ir_evt.u.ir.bits`,
                 repeat   = `:boolean esp_ir_evt.u.ir.repeat`,
-                time     = `:number esp_ir_evt.time_us`,
+                time     = `:number esp_ir_evt.time_us / A_TIME_US`,
             ])
         }
         false

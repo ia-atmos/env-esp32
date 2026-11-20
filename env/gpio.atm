@@ -189,7 +189,7 @@ atmos.env([
         loop {
             val k = `:number drv_gpio_next(&esp_gpio_evt) ? esp_gpio_evt.kind : DRV_EVT_NONE`
             until k == `:number DRV_EVT_NONE`
-            val time = `:number esp_gpio_evt.time_us`
+            val time = `:number esp_gpio_evt.time_us / A_TIME_US`
             if k == `:number DRV_EVT_GPIO` {
                 val v = `:number esp_gpio_evt.u.gpio.value`
                 emit(:gpio [

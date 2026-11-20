@@ -80,7 +80,7 @@ atmos.env([
         loop {
             while `:boolean drv_espnow_next(&esp_now_evt)`
             val mac  = `:string esp_now_evt.mac`
-            val time = `:number esp_now_evt.time_us`
+            val time = `:number esp_now_evt.time_us / A_TIME_US`
             if `:boolean esp_now_evt.kind == DRV_ESPNOW_RECV` {
                 emit(:espnow.recv [
                     mac  = mac,
