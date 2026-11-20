@@ -43,11 +43,21 @@ static pwm_channel_t s_pwm[LEDC_CHANNEL_MAX];
 static int  s_pin_pwm[GPIO_MAX_TRACKED];
 static bool s_inited = false;
 
+static bool peek (int64_t* time_us) {
+    drv_evt_t e;
+    if (s_queue==NULL || xQueuePeek(s_queue, &e, 0)!=pdTRUE) {
+        return false;
+    }
+    *time_us = e.time_us;
+    return true;
+}
+
 static void init (void) {
     if (s_inited) {
         return;
     }
     s_queue = xQueueCreate(EVENT_QUEUE_LEN, sizeof(drv_evt_t));
+    drv_source_add(DRV_SRC_GPIO, peek);
     for (int i=0; i<LEDC_CHANNEL_MAX; i++) {
         s_pwm[i] = (pwm_channel_t) { 0 };
     }

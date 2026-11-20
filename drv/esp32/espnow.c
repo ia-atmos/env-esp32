@@ -105,6 +105,15 @@ static const char* fail (const char* fn, const char* what, esp_err_t err) {
     return drv_errf("%s : %s: %s", fn, what, esp_err_to_name(err));
 }
 
+static bool peek (int64_t* time_us) {
+    drv_espnow_evt_t e;
+    if (s_queue==NULL || xQueuePeek(s_queue, &e, 0)!=pdTRUE) {
+        return false;
+    }
+    *time_us = e.time_us;
+    return true;
+}
+
 const char* drv_espnow_init (void) {
     if (s_inited) {
         return NULL;
@@ -135,6 +144,7 @@ const char* drv_espnow_init (void) {
         memcpy(peer.peer_addr, bcast, 6);
         (void) esp_now_add_peer(&peer);
     }
+    drv_source_add(DRV_SRC_ESPNOW, peek);
     s_inited = true;
     return NULL;
 }

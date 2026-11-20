@@ -52,6 +52,30 @@ typedef struct {
 } drv_evt_t;
 
 ///////////////////////////////////////////////////////////////////////////////
+// SOURCES (drv/src.c)
+///////////////////////////////////////////////////////////////////////////////
+
+// The drivers that queue events. A driver adds its source when it
+// starts, with a function that peeks at the time of its oldest event;
+// `drv_next_source` gives the source whose oldest event is the oldest of
+// all, so that the environment emits the events in the order they
+// happened, whatever driver queued them. A driver that the program never
+// starts is never added (and its code not linked, if never called).
+
+typedef enum {
+    DRV_SRC_NONE = 0,
+    DRV_SRC_GPIO,
+    DRV_SRC_IR,
+    DRV_SRC_ESPNOW,
+    DRV_SRC_MAX
+} drv_src_t;
+
+typedef bool (*drv_peek_t) (int64_t* time_us);
+
+void      drv_source_add  (drv_src_t src, drv_peek_t peek);
+drv_src_t drv_next_source (void);
+
+///////////////////////////////////////////////////////////////////////////////
 // CLOCK
 ///////////////////////////////////////////////////////////////////////////////
 

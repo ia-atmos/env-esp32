@@ -87,6 +87,17 @@ static bool queue_put (queue_t* q, drv_evt_t evt) {
     return true;
 }
 
+static bool queue_peek (queue_t* q, int64_t* t) {
+    if (q->n == 0) {
+        return false;
+    }
+    *t = q->evts[q->head].time_us;
+    return true;
+}
+
+static bool peek_gpio (int64_t* t) { return queue_peek(&Q_GPIO, t); }
+static bool peek_ir   (int64_t* t) { return queue_peek(&Q_IR,   t); }
+
 static bool queue_get (queue_t* q, drv_evt_t* evt) {
     if (q->n == 0) {
         return false;
@@ -122,6 +133,7 @@ static void pins_init (void) {
     if (PINS_INIT) {
         return;
     }
+    drv_source_add(DRV_SRC_GPIO, peek_gpio);
     for (int i=0; i<PIN_COUNT; i++) {
         PINS[i].pwm = -1;
     }
@@ -532,6 +544,7 @@ const char* drv_gpio_read_adc (int pin, const char* atten, int* raw) {
 }
 
 const char* drv_pwm_setup (int ch, int freq, int res) {
+    pins_init();
     if (ch<0 || ch>=PWM_CHANNELS) {
         return drv_errf("gpio.setup_pwm : invalid LEDC channel %d", ch);
     }
@@ -642,6 +655,7 @@ const char* drv_ir_start (int pin, int64_t glitch_ns, int64_t idle_ns) {
         return drv_errf("ir.start : expected glitch_ns < idle_ns");
     }
     memset(&IR_STATS, 0, sizeof(IR_STATS));
+    drv_source_add(DRV_SRC_IR, peek_ir);
     IR_HAVE_LAST = false;
     IR_ON = true;
     trace("ir.start %d", pin);
@@ -682,8 +696,17 @@ static bool valid_mac (const char* mac) {
                   &v[0],&v[1],&v[2],&v[3],&v[4],&v[5],&end) == 6;
 }
 
+static bool peek_espnow (int64_t* t) {
+    if (Q_NOW_N == 0) {
+        return false;
+    }
+    *t = Q_NOW[Q_NOW_HEAD].time_us;
+    return true;
+}
+
 const char* drv_espnow_init (void) {
     if (!ESPNOW_ON) {
+        drv_source_add(DRV_SRC_ESPNOW, peek_espnow);
         trace("espnow.init");
         ESPNOW_ON = true;
         strcpy(PEERS[NPEERS++], "ff:ff:ff:ff:ff:ff");

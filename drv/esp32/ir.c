@@ -198,6 +198,16 @@ static void destroy_driver(void)
     }
 }
 
+static bool peek (int64_t* time_us)
+{
+    ir_queued_event_t e;
+    if (s_event_queue == NULL || xQueuePeek(s_event_queue, &e, 0) != pdTRUE) {
+        return false;
+    }
+    *time_us = e.time_us;
+    return true;
+}
+
 const char* drv_ir_start (int pin, int64_t glitch, int64_t idle)
 {
     if (!GPIO_IS_VALID_GPIO(pin)) {
@@ -263,6 +273,7 @@ const char* drv_ir_start (int pin, int64_t glitch, int64_t idle)
     memset(&s_stats, 0, sizeof(s_stats));
     s_have_last_frame = false;
     s_running = true;
+    drv_source_add(DRV_SRC_IR, peek);
 
     if (xTaskCreate(ir_worker, "ir_rx", IR_WORKER_STACK_WORDS, NULL,
                     IR_WORKER_PRIORITY, &s_worker_task) != pdPASS) {
