@@ -9,6 +9,8 @@
 //
 //      <ms> pin <pin> <level>                      a pin goes to a level
 //      <ms> ir <protocol> <address> <command> [repeat]
+//                  (a repeat repeats the last frame, as on the board, and
+//                  with no frame before it counts as invalid)
 //      <ms> espnow <mac> <data>                    a message arrives
 //      <ms> quit                                   nothing more happens
 //      # a comment
@@ -210,6 +212,8 @@ static void pin_change (int pin, int level) {
 
 static bool IR_ON = false;
 static drv_ir_stats_t IR_STATS;
+static drv_evt_t IR_LAST;
+static bool IR_HAVE_LAST = false;
 
 #define ESPNOW_QUEUE_LEN 16
 static bool ESPNOW_ON = false;
@@ -229,9 +233,23 @@ static void pending_fire (pending_t p) {
             pin_change(p.a, p.b);
             break;
         case P_IR:
+            // as the board (drv/esp32/ir.c): a repeat code repeats the
+            // last frame of the same protocol, and with none it is invalid
             if (IR_ON) {
-                p.ir.time_us = NOW;
                 IR_STATS.captured++;
+                if (p.ir.u.ir.repeat) {
+                    if (!IR_HAVE_LAST ||
+                        strcmp(IR_LAST.u.ir.protocol, p.ir.u.ir.protocol)) {
+                        IR_STATS.invalid++;
+                        break;
+                    }
+                    p.ir = IR_LAST;
+                    p.ir.u.ir.repeat = true;
+                } else {
+                    IR_LAST = p.ir;
+                    IR_HAVE_LAST = true;
+                }
+                p.ir.time_us = NOW;
                 if (queue_put(&Q_IR, p.ir)) {
                     IR_STATS.decoded++;
                 } else {
@@ -624,6 +642,7 @@ const char* drv_ir_start (int pin, int64_t glitch_ns, int64_t idle_ns) {
         return drv_errf("ir.start : expected glitch_ns < idle_ns");
     }
     memset(&IR_STATS, 0, sizeof(IR_STATS));
+    IR_HAVE_LAST = false;
     IR_ON = true;
     trace("ir.start %d", pin);
     return NULL;

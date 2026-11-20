@@ -1,5 +1,6 @@
-# a repeat before the first frame, then a frame and two repeats
+# a repeat before the first frame (invalid), a frame, a repeat (of the
+# frame: its address and command here do not count), another frame
 50  ir nec 0x00 0x45 repeat
 100 ir nec 0x00 0x45
-210 ir nec 0x00 0x45 repeat
+210 ir nec 0x00 0x99 repeat
 320 ir nec 0x00 0x46

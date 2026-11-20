@@ -2,6 +2,6 @@
 ir	nec	0	69	69	32	false	100
 ir	69	true
 ir	70	false
-stats	4	4	0	0
+stats	4	3	1	0
 [drv 320ms] ir.stop
 catch	false	ir.start : glitch_ns must be <= 3187 ns (ESP32 hardware filter limit)

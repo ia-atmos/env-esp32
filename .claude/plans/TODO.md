@@ -20,7 +20,7 @@ steps of an item are letters (`#3a`). From another session an item is
 | #7 | `drv/esp32/*.c` and `esp32/` never compiled | work | done 2026-11-19: builds with ESP-IDF v6.1.1, no warning |
 | #8 | Board drivers duplicate `main/*.c` until #6 | remark | open |
 | #9 | A loop with no await starves the idle task on the board (watchdog warning) | remark | open |
-| #10 | The host does not reject an IR repeat with no frame before it | defect | open (host only) |
+| #10 | The host does not reject an IR repeat with no frame before it | defect | fixed 2026-11-20: a repeat repeats the last frame, as on the board; test in `tst/ir` |
 | #11 | Reals are doubles, emulated on the ESP32: measure (`atmos-lang#3`) | work | `-DATMOS_REAL_FLOAT=ON` builds; size measured (image -4.6 KB); speed needs a board |
 | #12 | Compare with the Lua version on the board: flash, heap, wake-ups | work | flash done 2026-11-19; heap and wake-ups need a board |
 | #13 | `sdkconfig.old` is committed (Lua project) | remark | open, goes with #6 |
