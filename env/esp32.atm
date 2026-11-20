@@ -53,18 +53,22 @@ static AStatus esp_opt (const char* fn, int i, AVal v, int64_t* out) {
     }
     return esp_int(fn, i, v, out);
 }
-// the time in the unit of the program (A_TIME_US microseconds each),
+// A_CLOCK_US was A_TIME_US before lang renamed the numeric options
+#ifndef A_CLOCK_US
+#define A_CLOCK_US A_TIME_US
+#endif
+// the time in the unit of the program (A_CLOCK_US microseconds each),
 // with the rest kept for the next step
 static int64_t esp_clk_rest = 0;
 static int64_t esp_clock_step (AVal nxt) {
-    int64_t max = (nxt.type == A_NIL) ? -1 : (int64_t) (a_dbl(nxt) * A_TIME_US);
+    int64_t max = (nxt.type == A_NIL) ? -1 : (int64_t) (a_dbl(nxt) * A_CLOCK_US);
     int64_t dt = drv_clock_wait(max);
     if (dt < 0) {
         return -1;
     }
     dt += esp_clk_rest;
-    esp_clk_rest = dt % A_TIME_US;
-    return dt / A_TIME_US;
+    esp_clk_rest = dt % A_CLOCK_US;
+    return dt / A_CLOCK_US;
 }
 ```
 
@@ -79,7 +83,7 @@ atmos.env([
     step = func () {
         val nxt = atmos.next()
         val dt = `:number esp_clock_step($nxt)`
-        set clock.now = `:number drv_clock_now() / A_TIME_US`
+        set clock.now = `:number drv_clock_now() / A_CLOCK_US`
         if dt < 0 {
             true            ;; nothing can happen anymore (only the host)
         } else {

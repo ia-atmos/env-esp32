@@ -187,7 +187,7 @@ func gpio.fade_pwm (channel, duty, duration_ms) {
 
 set esp32.drain@(`:number DRV_SRC_GPIO`) = func () {
     `drv_gpio_next(&esp_gpio_evt);`
-    val time = `:number esp_gpio_evt.time_us / A_TIME_US`
+    val time = `:number esp_gpio_evt.time_us / A_CLOCK_US`
     if `:boolean esp_gpio_evt.kind == DRV_EVT_GPIO` {
         val v = `:number esp_gpio_evt.u.gpio.value`
         emit(:gpio [

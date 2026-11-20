@@ -79,7 +79,7 @@ func espnow.set_channel (channel) {
 set esp32.drain@(`:number DRV_SRC_ESPNOW`) = func () {
     `drv_espnow_next(&esp_now_evt);`
     val mac  = `:string esp_now_evt.mac`
-    val time = `:number esp_now_evt.time_us / A_TIME_US`
+    val time = `:number esp_now_evt.time_us / A_CLOCK_US`
     if `:boolean esp_now_evt.kind == DRV_ESPNOW_RECV` {
         emit(:espnow.recv [
             mac  = mac,

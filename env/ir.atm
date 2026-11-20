@@ -55,6 +55,6 @@ set esp32.drain@(`:number DRV_SRC_IR`) = func () {
         raw      = `:number (int64_t) esp_ir_evt.u.ir.raw`,
         bits     = `:number esp_ir_evt.u.ir.bits`,
         repeat   = `:boolean esp_ir_evt.u.ir.repeat`,
-        time     = `:number esp_ir_evt.time_us / A_TIME_US`,
+        time     = `:number esp_ir_evt.time_us / A_CLOCK_US`,
     ])
 }
