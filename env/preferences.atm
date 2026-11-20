@@ -5,6 +5,8 @@
 ;; A `put_*` commits at once, unless its last argument is `false`. A
 ;; `get_*` of an absent key gives its `default` (or nil).
 
+include "esp32.atm"
+
 ```:prelude
 static AStatus esp_prefs_key (const char* fn, AVal key, const char** out) {
     return esp_str(fn, 1, key, out);

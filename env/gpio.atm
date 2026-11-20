@@ -7,6 +7,8 @@
 ;; Note that `:gpio.pwm_fade` is a subtag of `:gpio`: `await :gpio`
 ;; also awakes on a fade, and `await :gpio [pin=4]` does not.
 
+include "esp32.atm"
+
 ```:prelude
 static drv_evt_t esp_gpio_evt;
 
@@ -183,28 +185,21 @@ func gpio.fade_pwm (channel, duty, duration_ms) {
     `st = esp_pwm_fade($channel, $duty, $duration_ms);`
 }
 
-atmos.env([
-    mode = [secondary=true],
-    step = func () {
-        loop {
-            val k = `:number drv_gpio_next(&esp_gpio_evt) ? esp_gpio_evt.kind : DRV_EVT_NONE`
-            until k == `:number DRV_EVT_NONE`
-            val time = `:number esp_gpio_evt.time_us / A_TIME_US`
-            if k == `:number DRV_EVT_GPIO` {
-                val v = `:number esp_gpio_evt.u.gpio.value`
-                emit(:gpio [
-                    pin   = `:number esp_gpio_evt.u.gpio.pin`,
-                    value = v,
-                    edge  = if v == 1 => "rising" => "falling",
-                    time  = time,
-                ])
-            } else {
-                emit(:gpio.pwm_fade [
-                    channel = `:number esp_gpio_evt.u.fade.channel`,
-                    time    = time,
-                ])
-            }
-        }
-        false
-    },
-])
+set esp32.drain@(`:number DRV_SRC_GPIO`) = func () {
+    `drv_gpio_next(&esp_gpio_evt);`
+    val time = `:number esp_gpio_evt.time_us / A_TIME_US`
+    if `:boolean esp_gpio_evt.kind == DRV_EVT_GPIO` {
+        val v = `:number esp_gpio_evt.u.gpio.value`
+        emit(:gpio [
+            pin   = `:number esp_gpio_evt.u.gpio.pin`,
+            value = v,
+            edge  = if v == 1 => "rising" => "falling",
+            time  = time,
+        ])
+    } else {
+        emit(:gpio.pwm_fade [
+            channel = `:number esp_gpio_evt.u.fade.channel`,
+            time    = time,
+        ])
+    }
+}

@@ -6,6 +6,8 @@
 ;; `raw` is an integer (the Lua version gave a hexadecimal string, for
 ;; its 32-bit integers).
 
+include "esp32.atm"
+
 ```:prelude
 static drv_evt_t esp_ir_evt;
 
@@ -44,21 +46,15 @@ func ir.stats () {
     ]
 }
 
-atmos.env([
-    mode = [secondary=true],
-    step = func () {
-        loop {
-            while `:boolean drv_ir_next(&esp_ir_evt)`
-            emit(:ir [
-                protocol = `:string esp_ir_evt.u.ir.protocol`,
-                address  = `:number esp_ir_evt.u.ir.address`,
-                command  = `:number esp_ir_evt.u.ir.command`,
-                raw      = `:number (int64_t) esp_ir_evt.u.ir.raw`,
-                bits     = `:number esp_ir_evt.u.ir.bits`,
-                repeat   = `:boolean esp_ir_evt.u.ir.repeat`,
-                time     = `:number esp_ir_evt.time_us / A_TIME_US`,
-            ])
-        }
-        false
-    },
-])
+set esp32.drain@(`:number DRV_SRC_IR`) = func () {
+    `drv_ir_next(&esp_ir_evt);`
+    emit(:ir [
+        protocol = `:string esp_ir_evt.u.ir.protocol`,
+        address  = `:number esp_ir_evt.u.ir.address`,
+        command  = `:number esp_ir_evt.u.ir.command`,
+        raw      = `:number (int64_t) esp_ir_evt.u.ir.raw`,
+        bits     = `:number esp_ir_evt.u.ir.bits`,
+        repeat   = `:boolean esp_ir_evt.u.ir.repeat`,
+        time     = `:number esp_ir_evt.time_us / A_TIME_US`,
+    ])
+}

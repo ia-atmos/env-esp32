@@ -1,6 +1,8 @@
 ;; Tasks that print the free memory and the steps of the clock per
 ;; second, to compare versions on the board.
 
+include "esp32.atm"
+
 ```:prelude
 static drv_meminfo_t esp_mem;
 ```

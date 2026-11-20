@@ -8,6 +8,8 @@
 ;; A "success" of a unicast means that the peer acknowledged the
 ;; message; of a broadcast ("ff:ff:ff:ff:ff:ff"), only that it was sent.
 
+include "esp32.atm"
+
 ```:prelude
 static drv_espnow_evt_t esp_now_evt;
 
@@ -74,27 +76,21 @@ func espnow.set_channel (channel) {
     `st = esp_now_set_channel($channel);`
 }
 
-atmos.env([
-    mode = [secondary=true],
-    step = func () {
-        loop {
-            while `:boolean drv_espnow_next(&esp_now_evt)`
-            val mac  = `:string esp_now_evt.mac`
-            val time = `:number esp_now_evt.time_us / A_TIME_US`
-            if `:boolean esp_now_evt.kind == DRV_ESPNOW_RECV` {
-                emit(:espnow.recv [
-                    mac  = mac,
-                    data = `:atmos a_str((const char*) esp_now_evt.data, esp_now_evt.len)`,
-                    time = time,
-                ])
-            } else {
-                emit(:espnow.send [
-                    mac    = mac,
-                    status = if `:boolean esp_now_evt.ok` => "success" => "fail",
-                    time   = time,
-                ])
-            }
-        }
-        false
-    },
-])
+set esp32.drain@(`:number DRV_SRC_ESPNOW`) = func () {
+    `drv_espnow_next(&esp_now_evt);`
+    val mac  = `:string esp_now_evt.mac`
+    val time = `:number esp_now_evt.time_us / A_TIME_US`
+    if `:boolean esp_now_evt.kind == DRV_ESPNOW_RECV` {
+        emit(:espnow.recv [
+            mac  = mac,
+            data = `:atmos a_str((const char*) esp_now_evt.data, esp_now_evt.len)`,
+            time = time,
+        ])
+    } else {
+        emit(:espnow.send [
+            mac    = mac,
+            status = if `:boolean esp_now_evt.ok` => "success" => "fail",
+            time   = time,
+        ])
+    }
+}

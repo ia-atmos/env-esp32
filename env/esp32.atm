@@ -1,11 +1,23 @@
-;; The ESP32 environment: the clock as the primary environment, and one
-;; secondary environment per driver that emits events.
+;; The ESP32 environment: one environment for the board.
 ;;
-;; A program uses it with `atmos -e env/esp32.atm`, or with an
-;; `include` of this file. It declares the modules `clock`, `gpio`,
-;; `ir`, `espnow`, `preferences` and `debug`, which call the drivers of
-;; drv/drv.h: those of the board (drv/esp32/) or those simulated on the
-;; host (drv/host/).
+;; Its step waits until the nearest timer of the program, or until a
+;; driver queues an event; lets the time that passed pass in the program;
+;; then emits the events that the drivers queued, in the order they
+;; happened, whatever driver queued them.
+;;
+;; This file is the core. A program includes the modules it uses, each
+;; of which includes this file:
+;;
+;;      include "<repo>/env/gpio.atm"           ;; gpio
+;;      include "<repo>/env/ir.atm"             ;; ir
+;;      include "<repo>/env/espnow.atm"         ;; espnow (links Wi-Fi)
+;;      include "<repo>/env/preferences.atm"    ;; preferences
+;;      include "<repo>/env/debug.atm"          ;; debug
+;;
+;; The modules call the drivers of drv/drv.h: those of the board
+;; (drv/esp32/) or those simulated on the host (drv/host/). A module with
+;; events registers in `esp32.drain` the function that emits the oldest
+;; event of its driver.
 
 ```:prelude
 #include "drv.h"
@@ -41,11 +53,45 @@ static AStatus esp_opt (const char* fn, int i, AVal v, int64_t* out) {
     }
     return esp_int(fn, i, v, out);
 }
+// the time in the unit of the program (A_TIME_US microseconds each),
+// with the rest kept for the next step
+static int64_t esp_clk_rest = 0;
+static int64_t esp_clock_step (AVal nxt) {
+    int64_t max = (nxt.type == A_NIL) ? -1 : (int64_t) (a_dbl(nxt) * A_TIME_US);
+    int64_t dt = drv_clock_wait(max);
+    if (dt < 0) {
+        return -1;
+    }
+    dt += esp_clk_rest;
+    esp_clk_rest = dt % A_TIME_US;
+    return dt / A_TIME_US;
+}
 ```
 
-include "clock.atm"
-include "gpio.atm"
-include "ir.atm"
-include "espnow.atm"
-include "preferences.atm"
-include "debug.atm"
+;; `clock.now` is the time since boot, in the unit of the build
+val clock = [now=0]
+
+;; drain@<source of drv.h>: emits the oldest event of that driver
+val esp32 = [drain=[]]
+
+atmos.env([
+    mode = [primary=true],
+    step = func () {
+        val nxt = atmos.next()
+        val dt = `:number esp_clock_step($nxt)`
+        set clock.now = `:number drv_clock_now() / A_TIME_US`
+        if dt < 0 {
+            true            ;; nothing can happen anymore (only the host)
+        } else {
+            if dt > 0 {
+                emit(dt)
+            }
+            loop {
+                val src = `:number drv_next_source()`
+                until src == 0
+                esp32.drain@src()
+            }
+            false
+        }
+    },
+])
