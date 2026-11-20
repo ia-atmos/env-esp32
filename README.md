@@ -6,7 +6,7 @@ on the ESP32. It holds two implementations:
 | | C (ia-atmos/lang) | Lua (reference) |
 |---|---|---|
 | State | replaces the Lua one; tested on the host, builds for the board, not yet run on it | runs on the board |
-| Program | `app/init.atm` | `atm/init.atm` |
+| Programs | `app/init.atm`, `app/ultrat.atm` | `atm/init.atm`, `atm/ultrat/` |
 | Environment | `env/esp32.atm` and one module per driver, over `drv/` ([doc/env.md](doc/env.md)) | `lua/esp32/*.lua` over `main/*.c` ([doc/api.md](doc/api.md)) |
 | Build | `make test` (host), `cd esp32 && idf.py build` (board) | `idf.py build` at the root |
 
@@ -17,12 +17,13 @@ The Lua implementation is removed once the C one runs on the board.
 ```bash
 git submodule update --init ext/lang    # ia-atmos/lang: the compiler and the runtime
 make -C ext/lang
-make test                               # tst/*.atm and app/init.atm, on the host
+make test                               # tst/*.atm and app/*.atm, on the host
 cd esp32 && idf.py -p /dev/ttyUSB0 build flash monitor
 ```
 
 See [doc/env.md](doc/env.md) for the modules, the differences from the
-Lua version, and the tests on the host.
+Lua version, and the tests on the host, and [doc/board.md](doc/board.md)
+for what to check on the board.
 
 ---
 

@@ -16,10 +16,10 @@ steps of an item are letters (`#3a`). From another session an item is
 | #3 | Build for the board in this session (install ESP-IDF v6) | decision | decided 2026-11-19: #3a, install here |
 | #4 | Ownership: sync with Pedro's `pgvalle-research/atmos-esp32`, who tests on the board | decision | decided 2026-11-20: follow his repository one way (driver fixes come here), nothing goes there; Pedro or the author runs on the board |
 | #5 | `ultrat`: port it, or wait for Pedro | decision | decided 2026-11-20 (port); done in `app/ultrat/`, with 11 fixes and 2 questions in its README |
-| #6 | Remove the Lua implementation, once the C one runs on the board | work | open, after #3 and a board run |
+| #6 | Remove the Lua implementation, once the C one runs on the board | work | open: needs the board, steps in doc/board.md |
 | #7 | `drv/esp32/*.c` and `esp32/` never compiled | work | done 2026-11-19: builds with ESP-IDF v6.1.1, no warning |
 | #8 | Board drivers duplicate `main/*.c` until #6 | remark | open |
-| #9 | A loop with no await starves the idle task on the board (watchdog warning) | remark | open |
+| #9 | A loop with no await starves the idle task on the board (watchdog warning) | remark | documented in doc/env.md; sent to atmos-envs |
 | #10 | The host does not reject an IR repeat with no frame before it | defect | fixed 2026-11-20: a repeat repeats the last frame, as on the board; test in `tst/ir` |
 | #11 | Reals are doubles, emulated on the ESP32: measure (`atmos-lang#3`) | work | `-DATMOS_REAL_FLOAT=ON` builds; size measured (image -4.6 KB); speed needs a board |
 | #12 | Compare with the Lua version on the board: flash, heap, wake-ups | work | flash done 2026-11-19; heap and wake-ups need a board |
