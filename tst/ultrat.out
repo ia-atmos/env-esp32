@@ -1,0 +1,66 @@
+[drv 0ms] ir.start 15
+[drv 0ms] gpio.setup_pwm 0 25000 10
+[drv 0ms] gpio.setup_pwm 1 25000 10
+[drv 0ms] gpio.setup_pwm 2 25000 10
+[drv 0ms] gpio.setup_pwm 3 25000 10
+[drv 0ms] gpio.attach_pwm 19 0
+[drv 0ms] gpio.attach_pwm 18 1
+[drv 0ms] gpio.attach_pwm 4 2
+[drv 0ms] gpio.attach_pwm 23 3
+[drv 0ms] gpio.write_pwm 0 1023
+[drv 0ms] gpio.write_pwm 1 1023
+[drv 0ms] gpio.write_pwm 2 1023
+[drv 0ms] gpio.write_pwm 3 1023
+[drv 0ms] gpio.setup 0 input_pullup
+BOOT pressed: learning
+waiting for the start command
+got 16
+waiting for the prepare command
+got 17
+waiting for the stop command
+got 18
+[drv 400ms] preferences.open commands
+[drv 400ms] preferences.put_int start 16
+[drv 400ms] preferences.put_int prepare 17
+[drv 400ms] preferences.put_int stop 18
+[drv 400ms] preferences.close commands
+commands saved
+start: 16
+prepare: 17
+stop: 18
+start
+[drv 1000ms] gpio.setup 33 input
+[drv 1000ms] gpio.setup 35 input
+[drv 1000ms] gpio.setup 34 input
+[drv 1000ms] gpio.setup 32 input
+[drv 1000ms] gpio.setup 25 input
+[drv 1000ms] gpio.setup 14 input
+[drv 1500ms] gpio.write_pwm 0 0
+[drv 1500ms] gpio.write_pwm 1 1023
+[drv 1500ms] gpio.write_pwm 2 1023
+[drv 1500ms] gpio.write_pwm 3 0
+[drv 1510ms] gpio.write_pwm 0 0
+[drv 1510ms] gpio.write_pwm 1 1023
+[drv 1510ms] gpio.write_pwm 2 1023
+[drv 1510ms] gpio.write_pwm 3 0
+[drv 1520ms] gpio.write_pwm 0 0
+[drv 1520ms] gpio.write_pwm 1 1023
+[drv 1520ms] gpio.write_pwm 2 1023
+[drv 1520ms] gpio.write_pwm 3 0
+[drv 1530ms] gpio.write_pwm 0 0
+[drv 1530ms] gpio.write_pwm 1 1023
+[drv 1530ms] gpio.write_pwm 2 1023
+[drv 1530ms] gpio.write_pwm 3 0
+[drv 1540ms] gpio.write_pwm 0 0
+[drv 1540ms] gpio.write_pwm 1 1023
+[drv 1540ms] gpio.write_pwm 2 1023
+[drv 1540ms] gpio.write_pwm 3 0
+[drv 1550ms] gpio.write_pwm 0 1023
+[drv 1550ms] gpio.write_pwm 1 1023
+[drv 1550ms] gpio.write_pwm 2 1023
+[drv 1550ms] gpio.write_pwm 3 1023
+[drv 2000ms] gpio.write_pwm 0 1023
+[drv 2000ms] gpio.write_pwm 1 1023
+[drv 2000ms] gpio.write_pwm 2 1023
+[drv 2000ms] gpio.write_pwm 3 1023
+stop

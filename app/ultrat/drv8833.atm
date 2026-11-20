@@ -1,0 +1,52 @@
+;; The DRV8833 motor driver: two motors, each on two PWM channels, in slow
+;; decay. A speed goes from -1023 (back) to 1023 (forward).
+
+include "../../env/gpio.atm"
+
+val drv8833 = []
+
+val LC1 = 0
+val LC2 = 1
+val RC1 = 2
+val RC2 = 3
+
+func drv8833.reset () {
+    gpio.write_pwm(LC1, 1023)
+    gpio.write_pwm(LC2, 1023)
+    gpio.write_pwm(RC1, 1023)
+    gpio.write_pwm(RC2, 1023)
+}
+
+func drv8833.setup (l1, l2, r1, r2) {
+    gpio.setup_pwm(LC1, 25000, 10)
+    gpio.setup_pwm(LC2, 25000, 10)
+    gpio.setup_pwm(RC1, 25000, 10)
+    gpio.setup_pwm(RC2, 25000, 10)
+    gpio.attach_pwm(l1, LC1)
+    gpio.attach_pwm(l2, LC2)
+    gpio.attach_pwm(r1, RC1)
+    gpio.attach_pwm(r2, RC2)
+    drv8833.reset()
+}
+
+func drv8833.motor (c1, c2, v) {
+    if v >= 0 {
+        gpio.write_pwm(c1, 1023)
+        gpio.write_pwm(c2, 1023 - math.min(v, 1023))
+    } else {
+        gpio.write_pwm(c1, 1023 - math.min(-v, 1023))
+        gpio.write_pwm(c2, 1023)
+    }
+}
+
+func drv8833.set (vl, vr) {
+    drv8833.motor(LC1, LC2, vl)
+    drv8833.motor(RC1, RC2, vr)
+}
+
+;; Moves for `dt`, then stops.
+set drv8833.Move = task (vl, vr, dt) {
+    drv8833.set(vl, vr)
+    await(dt)
+    drv8833.reset()
+}

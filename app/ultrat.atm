@@ -1,0 +1,28 @@
+;; ultrat, a sumo robot: the port of atm/ultrat (Lua) to ia-atmos/lang.
+;;
+;; At reset, learns the commands of the IR remote if BOOT is pressed (see
+;; setup.atm). Then, forever: waits for start, and fights in the mode
+;; until stop.
+;;
+;; The Lua version left the choice of the mode unwritten (modes.Select
+;; and modes.Run were empty): this one always fights in ISeeYou.
+
+include "ultrat/setup.atm"
+include "ultrat/modes.atm"
+
+ir.start(board.IR_PIN)
+drv8833.setup(board.MA1, board.MA2, board.MB1, board.MB2)
+
+if !(await setup.Start()) {
+    print("no commands: reset with BOOT pressed to learn them")
+}
+
+loop {
+    await :ir [repeat=false] until it.command == setup.start
+    print("start")
+    watching :ir [repeat=false] until it.command == setup.stop {
+        await modes.ISeeYou()
+    }
+    drv8833.reset()
+    print("stop")
+}

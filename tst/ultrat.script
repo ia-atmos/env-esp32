@@ -1,0 +1,13 @@
+# app/ultrat.atm: BOOT held at reset, so it learns the commands (start,
+# prepare, stop; a second start is ignored). Then it fights from the
+# start to the stop: S3 (pin 35) sees the target for 50ms.
+0     hold 0 0
+100   ir nec 0x00 0x10
+200   ir nec 0x00 0x10
+300   ir nec 0x00 0x11
+400   ir nec 0x00 0x12
+1000  ir nec 0x00 0x10
+1500  pin 35 1
+1550  pin 35 0
+2000  ir nec 0x00 0x12
+2100  quit

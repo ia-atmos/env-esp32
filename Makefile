@@ -3,7 +3,7 @@
 # test with no board. The board build is ESP-IDF, in esp32/.
 #
 #   make host       builds app/init.atm into build-host/init
-#   make test       runs tst/*.atm and app/init.atm
+#   make test       runs tst/*.atm, app/init.atm and app/ultrat.atm
 #   ATMOS_ASAN=1 make test     the same, with the address sanitizer (leaks)
 #
 # The compiler is the submodule ext/lang (or LANG_DIR=<checkout>), which
@@ -35,6 +35,11 @@ $(BUILD)/tst/init: app/init.atm $(ENVS) $(DRV)
 	ATMOS_CFLAGS="$(HOST_CFLAGS)" ATMOS_LDFLAGS="$(HOST_LDFLAGS)" \
 	    $(ATMOS) -o $@ $<
 
+$(BUILD)/tst/ultrat: app/ultrat.atm app/ultrat/*.atm $(ENVS) $(DRV)
+	@mkdir -p $(BUILD)/tst
+	ATMOS_CFLAGS="$(HOST_CFLAGS)" ATMOS_LDFLAGS="$(HOST_LDFLAGS)" \
+	    $(ATMOS) -o $@ $<
+
 $(BUILD)/tst/%: tst/%.atm $(ENVS) $(DRV)
 	@mkdir -p $(BUILD)/tst
 	ATMOS_CFLAGS="$(HOST_CFLAGS)" ATMOS_LDFLAGS="$(HOST_LDFLAGS)" \
@@ -42,10 +47,10 @@ $(BUILD)/tst/%: tst/%.atm $(ENVS) $(DRV)
 
 # Each tst/<t>.atm runs with tst/<t>.script (if any) as its input, and
 # its output must be tst/<t>.out (tst/<t>.out.ms with ATMOS_TIME=ms,
-# where the times print in milliseconds). The test `init` is
-# app/init.atm. The numeric options of the compiler (ATMOS_REAL=float,
+# where the times print in milliseconds). The tests `init` and `ultrat`
+# are app/init.atm and app/ultrat.atm. The numeric options of the compiler (ATMOS_REAL=float,
 # ATMOS_INT=32, ATMOS_TIME=ms) pass through the environment.
-TSTS := $(wildcard tst/*.atm) tst/init.atm
+TSTS := $(wildcard tst/*.atm) tst/init.atm tst/ultrat.atm
 
 test: $(TSTS:tst/%.atm=$(BUILD)/tst/%)
 	@for t in $(TSTS:tst/%.atm=%); do \

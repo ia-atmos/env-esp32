@@ -1,0 +1,68 @@
+;; Reads the line sensors every MS and emits to the task that spawned it:
+;;   - :target [on]         when it starts or stops seeing the target;
+;;   - :pid [v, readings]   at every reading.
+
+include "board.atm"
+
+val pid = [ KP=450, KI=0, KD=0, MS=10ms ]
+
+val SENSORS = [board.S5, board.S3, board.S2, board.S4, board.S6, board.S8]
+
+;; The Lua version read the sensors with no setup.
+func pid.setup () {
+    loop _, io in SENSORS {
+        gpio.setup(io, "input")
+    }
+}
+
+func pid.read_sensors () {
+    [ gpio.read(board.S5),
+      gpio.read(board.S3),
+      gpio.read(board.S2),
+      gpio.read(board.S4),
+      gpio.read(board.S6),
+      gpio.read(board.S8) ]
+}
+
+;; As in the Lua version: the weights apply to the readings 1 to 4
+;; (S3, S2, S4, S6); S5 and S8 are read but not weighted.
+func pid.error (readings) {
+    val weights = [-4, -2, 2, 4]
+    var sum = 0
+    var active = 0
+    loop i in 4 {
+        if readings@(i+1) != 0 {
+            set sum = sum + weights@i
+            set active = active + 1
+        }
+    }
+    if active == 0 => 0 => (sum / active)
+}
+
+set pid.Pid = task () {
+    pid.setup()
+    var err_before = 0
+    var i_before = 0
+    var tgt_before = false
+    loop {
+        await(pid.MS)
+        val dt = pid.MS
+        val readings = pid.read_sensors()
+        val err = pid.error(readings)
+
+        val tgt = err != 0
+        if tgt != tgt_before {
+            emit @:parent (:target [on=tgt])
+        }
+
+        val p = err
+        val i = (err * dt) + i_before
+        val d = (err - err_before) / dt
+        val v = (pid.KP * p) + (pid.KI * i) + (pid.KD * d)
+        emit @:parent (:pid [v=v, readings=readings])
+
+        set err_before = err
+        set i_before = i
+        set tgt_before = tgt
+    }
+}

@@ -1,0 +1,29 @@
+;; The pins of the board of ultrat, a sumo robot, and a task to blink a LED.
+
+include "../../env/gpio.atm"
+
+val board = [
+    S2 = 34, S3 = 35, S4 = 32, S5 = 33, S6 = 25, S7 = 27, S8 = 14,
+    IR_PIN    = 15,
+    LED_STRIP = 2,
+    LEARN_PIN = 0,      ;; the BOOT button: low while pressed
+    D26  = 26,
+    BTN2 = 12,
+    MA1 = 19, MA2 = 18, MB1 = 4, MB2 = 23,
+]
+set board.S_ESQ  = board.S7
+set board.S_FESQ = board.S3
+set board.S_FDIR = board.D26
+set board.S_DIR  = board.S8
+
+;; Blinks `n` times, or forever if `n <= 0`.
+set board.BlinkLed = task (io, n, time_on, time_off) {
+    gpio.setup(io, "output")
+    loop i {
+        gpio.write(io, true)
+        await(time_on)
+        gpio.write(io, false)
+        await(time_off)
+        until (n > 0) && (i+1 >= n)
+    }
+}

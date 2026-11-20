@@ -1,0 +1,70 @@
+;; The commands of the IR remote (start, prepare, stop): learned while the
+;; BOOT button is pressed at reset, and kept in the preferences.
+
+include "../../env/ir.atm"
+include "../../env/preferences.atm"
+include "board.atm"
+
+val setup = [ start=0, prepare=0, stop=0 ]
+
+val LEARN_TIMEOUT = 10s
+
+;; A command not yet learned, or 0 after LEARN_TIMEOUT.
+set setup.AwaitButton = task () {
+    var cmd = 0
+    watching LEARN_TIMEOUT {
+        loop {
+            val k = await :ir [repeat=false]
+            set cmd = k.command
+            while (cmd == setup.start) || (cmd == setup.stop) || (cmd == setup.prepare)
+        }
+    }
+    if cmd == 0 => print("timeout: learning stopped, try again") => print("got " ++ cmd)
+    cmd
+}
+
+func setup.print () {
+    print("start: "   ++ setup.start)
+    print("prepare: " ++ setup.prepare)
+    print("stop: "    ++ setup.stop)
+}
+
+func setup.save () {
+    preferences.open("commands")
+    preferences.put_int("start",   setup.start)
+    preferences.put_int("prepare", setup.prepare)
+    preferences.put_int("stop",    setup.stop)
+    preferences.close()
+}
+
+func setup.load () {
+    preferences.open("commands", true)
+    set setup.start   = preferences.get_int("start",   0)
+    set setup.prepare = preferences.get_int("prepare", 0)
+    set setup.stop    = preferences.get_int("stop",    0)
+    preferences.close()
+}
+
+;; Learns if the BOOT button is pressed, else loads. Gives false if the
+;; learning timed out.
+set setup.Start = task () {
+    gpio.setup(board.LEARN_PIN, "input_pullup")
+    if gpio.read(board.LEARN_PIN) == 0 {
+        print("BOOT pressed: learning")
+        print("waiting for the start command")
+        set setup.start = await setup.AwaitButton()
+        if setup.start == 0 => return(false)
+        print("waiting for the prepare command")
+        set setup.prepare = await setup.AwaitButton()
+        if setup.prepare == 0 => return(false)
+        print("waiting for the stop command")
+        set setup.stop = await setup.AwaitButton()
+        if setup.stop == 0 => return(false)
+        setup.save()
+        print("commands saved")
+    } else {
+        setup.load()
+    }
+    setup.print()
+    true
+}

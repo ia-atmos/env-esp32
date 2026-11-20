@@ -1,0 +1,59 @@
+;; The fighting modes.
+
+include "drv8833.atm"
+include "pid.atm"
+
+val modes = []
+
+;; Turns to the target while it sees it; full ahead when centered.
+set modes.ISeeYou = task () {
+    pin p = spawn pid.Pid()
+    loop {
+        await :target [on=true]
+        watching :target [on=false] {
+            loop e on :pid {
+                if e.v == 0 => drv8833.set(1023, 1023) => drv8833.set(e.v, -e.v)
+            }
+        }
+        drv8833.reset()
+    }
+}
+
+;; As ISeeYou, but stops when centered.
+set modes.Calibration = task () {
+    pin p = spawn pid.Pid()
+    loop {
+        await :target [on=true]
+        watching :target [on=false] {
+            loop e on :pid {
+                if e.v == 0 => drv8833.reset() => drv8833.set(e.v, -e.v)
+            }
+        }
+        drv8833.reset()
+    }
+}
+
+set modes.Backwards = task () {
+    await drv8833.Move(1023, 1023, 500ms)
+    await drv8833.Move(-1023, 1023, 350ms)
+    await modes.ISeeYou()
+}
+
+set modes.Whiplash = task () {
+    await drv8833.Move(1023, 1023, 300ms)
+    await drv8833.Move(1023, -1023, 50ms)
+    await modes.ISeeYou()
+}
+
+set modes.Sharingan = task () {
+    if math.random(1, 2) == 1 {
+        drv8833.set(-900, 900)
+    } else {
+        drv8833.set(900, -900)
+    }
+    await(150ms)
+    await modes.Whiplash()
+}
+
+set modes.all = [ modes.ISeeYou, modes.Calibration, modes.Backwards,
+                  modes.Whiplash, modes.Sharingan ]
