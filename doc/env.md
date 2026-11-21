@@ -89,6 +89,12 @@ generated C and the drivers must be built with the same ones:
 | integers of 32 bits | `ATMOS_INT_32` | `ATMOS_INTEGER=32` | with 32-bit reals, a value has 8 bytes instead of 16 |
 | time in milliseconds | `ATMOS_TIME_MS` | `ATMOS_CLOCK=ms` | timers, the time emitted and the `time` of the events are in ms |
 
+The checks of `pin` are an option too: `idf.py -DATMOS_PIN=unchecked`
+or `-DATMOS_PIN=off` (`ATMOS_PIN=...` on the host). With `off`, `pin`
+only holds tasks and pools, and cycles are not collected. For
+`app/ultrat.atm`, `off` shrinks our component from 215219 to 198269
+bytes (with the three options above too, to 161172).
+
 With 32-bit integers, use milliseconds: a time since boot in
 microseconds wraps after 35 minutes (in ms, after 24 days), and the
 `raw` of an IR frame above `0x7FFFFFFF` wraps to a negative number. For
