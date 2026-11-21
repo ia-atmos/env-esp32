@@ -89,11 +89,6 @@ generated C and the drivers must be built with the same ones:
 | integers of 32 bits | `ATMOS_INT_32` | `ATMOS_INTEGER=32` | with 32-bit reals, a value has 8 bytes instead of 16 |
 | time in milliseconds | `ATMOS_TIME_MS` | `ATMOS_CLOCK=ms` | timers, the time emitted and the `time` of the events are in ms |
 
-The host names are those of lang from its branch `float` on; before it,
-they were `ATMOS_REAL=float`, `ATMOS_INT=32` and `ATMOS_TIME=ms`, and
-the Makefile takes either. The board build picks the macros that the
-runtime in `ext/lang` takes.
-
 With 32-bit integers, use milliseconds: a time since boot in
 microseconds wraps after 35 minutes (in ms, after 24 days), and the
 `raw` of an IR frame above `0x7FFFFFFF` wraps to a negative number. For

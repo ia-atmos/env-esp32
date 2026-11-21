@@ -49,8 +49,7 @@ $(BUILD)/tst/%: tst/%.atm $(ENVS) $(DRV)
 # its output must be tst/<t>.out (tst/<t>.out.ms with ATMOS_CLOCK=ms,
 # where the times print in milliseconds). The tests `init` and `ultrat`
 # are app/init.atm and app/ultrat.atm. The numeric options of the
-# compiler (ATMOS_FLOAT=32, ATMOS_INTEGER=32, ATMOS_CLOCK=ms; before lang
-# renamed them, ATMOS_REAL=float, ATMOS_INT=32, ATMOS_TIME=ms) pass
+# compiler (ATMOS_FLOAT=32, ATMOS_INTEGER=32, ATMOS_CLOCK=ms) pass
 # through the environment.
 TSTS := $(wildcard tst/*.atm) tst/init.atm tst/ultrat.atm
 
@@ -60,7 +59,7 @@ test: $(TSTS:tst/%.atm=$(BUILD)/tst/%)
 	    ESP32_HOST_TRACE=1 ESP32_HOST_SCRIPT=$$s $(BUILD)/tst/$$t \
 	        > $(BUILD)/tst/$$t.out 2>&1; \
 	    o=tst/$$t.out; \
-	    if [ "$$ATMOS_CLOCK" = ms ] || [ "$$ATMOS_TIME" = ms ]; then \
+	    if [ "$$ATMOS_CLOCK" = ms ]; then \
 	        [ -f $$o.ms ] && o=$$o.ms; \
 	    fi; \
 	    if diff -u $$o $(BUILD)/tst/$$t.out; then \
