@@ -30,7 +30,7 @@ steps of an item are letters (`#3a`). From another session an item is
 | #17 | A native result written over an Atmos variable leaked the default it replaced (`get_int`, `get_bool` with a string or table default) | defect | fixed 2026-11-19 (`a_set`), test under `ATMOS_ASAN=1 make test` |
 | #18 | The board image filled 94% of the default 1 MB app partition | defect | fixed 2026-11-19: own table, app of 4032 KB, 76% free |
 | #19 | Save the ESP-IDF install as the setup script of the environment `ceu-atmos`, only for sessions with `env-esp32` | work | done 2026-11-22: saved; runs in the next fresh session (unproven until then) |
-| #21 | `atmos-float` branch `float` (32-bit integers, time in ms): measured on the board build in a scratch copy, not adopted (the branch may change) | work | reported 2026-11-20: AVal 16 to 8 bytes, our component -16%; a Makefile defect of the branch reported |
+| #21 | `atmos-float` branch `float` (32-bit integers, time in ms) | work | closed 2026-11-23: merged into lang (d19d40f) and adopted here (#23) |
 | #22 | Soft-float cost on a board with no FPU (esp32c3), asked by atmos-float (#7 there) | work | done 2026-11-20: soft-float arithmetic in ROM (0 B flash), libm 15.2 KB vs 10.9 KB on the ESP32; sent |
 | #23 | lang renames the numeric options (A_TIME_US to A_CLOCK_US, ATM_* macros, ATMOS_REAL/INT/TIME to ATMOS_FLOAT/INTEGER/CLOCK) | work | done 2026-11-20 on master, working with both: tested against lang 55b1fee and branch float e415507, host and board; nothing to merge later |
 | #20 | To `atmos-lang`: `nanosleep` in `rt/main.c`, `$x = ...` in the manual, warnings of the generated C | defect | fixed in lang (`ee17162`, `dc94c6f`, `7b0bf06`); `ext/lang` at `826e219`, built with `ATM_NO_CLOCK` |
@@ -61,7 +61,7 @@ steps of an item are letters (`#3a`). From another session an item is
 - The rules of `pin`: `atmos-pin` (session_011eECogSDhkVfyt7qme5DLh).
 - Numeric types per system: `atmos-float` (session_011eECog5kQDX9i1eN1gKzDJ).
 - Environments in general: `atmos-envs` (session_011eECofYWTNPACTtUjHN4p6).
-- `ext/lang` is at `98e4787` (2026-11-22); host tests pass (also with ASan), the board builds with no warning.
+- `ext/lang` is at `95946fe` (2026-11-23); host tests pass (also with ASan), the board builds with no warning.
 
 ## Decided by the author
 
