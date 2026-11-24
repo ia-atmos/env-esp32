@@ -57,7 +57,8 @@ steps of an item are letters (`#3a`). From another session an item is
 
 ## Sessions
 
-- Compiler: `atmos-lang` (session_011eECogKVQ7ZzmWCoMST2wK).
+- Coordination, status, questions for the author: `atmos` (session_011eECohhJbc4GMpAj3yyeEo), from 2026-11-24 (atmos-lang#119, as relayed by `atmos`).
+- Compiler, measurements on the ports, merges into lang `main`: `atmos-lang` (session_011eECogKVQ7ZzmWCoMST2wK).
 - The rules of `pin`: `atmos-pin` (session_011eECogSDhkVfyt7qme5DLh).
 - Numeric types per system: `atmos-float` (session_011eECog5kQDX9i1eN1gKzDJ).
 - Environments in general: `atmos-envs` (session_011eECofYWTNPACTtUjHN4p6).
