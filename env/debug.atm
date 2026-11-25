@@ -28,7 +28,7 @@ task debug.Fps () {
     loop {
         var n = 0
         watching 1s {
-            loop on :clock {
+            loop on :fps {
                 set n = n + 1
             }
         }
