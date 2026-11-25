@@ -62,7 +62,7 @@ steps of an item are letters (`#3a`). From another session an item is
 - The rules of `pin`: `atmos-pin` (session_011eECogSDhkVfyt7qme5DLh).
 - Numeric types per system: `atmos-float` (session_011eECog5kQDX9i1eN1gKzDJ).
 - Environments in general: `atmos-envs` (session_011eECofYWTNPACTtUjHN4p6).
-- `ext/lang` is at `95946fe` (2026-11-23); host tests pass (also with ASan), the board builds with no warning.
+- `ext/lang` is at `51cabc1` (2026-11-25); host tests pass (also with ASan), the board builds with no warning.
 
 ## Decided by the author
 
