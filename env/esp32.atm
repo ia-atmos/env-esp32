@@ -22,6 +22,14 @@
 ```:prelude
 #include "drv.h"
 
+// ESP32_FPS (the option ESP32_FPS of esp32/main/CMakeLists.txt): the
+// clock never blocks, and each step emits :fps
+#ifdef ESP32_FPS
+#define ESP_FPS 1
+#else
+#define ESP_FPS 0
+#endif
+
 // The error of a driver, raised as an exception of the program.
 static AStatus esp_chk (const char* err) {
     return (err == NULL) ? A_OK : a_error("%s", err);
@@ -72,7 +80,7 @@ static int64_t esp_clock_step (AVal nxt) {
 val clock = [now=0]
 
 ;; drain@<source of drv.h>: emits the oldest event of that driver
-val esp32 = [drain=[]]
+val esp32 = [drain=[], fps=`:boolean ESP_FPS`]
 
 atmos.env([
     mode = [primary=true],
@@ -90,6 +98,9 @@ atmos.env([
                 val src = `:number drv_next_source()`
                 until src == 0
                 esp32.drain@src()
+            }
+            if esp32.fps {
+                emit(:fps)  ;; each step, as fast as possible
             }
             false
         }

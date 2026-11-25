@@ -15,6 +15,9 @@ option(ATMOS_REAL_FLOAT "reals are 32-bit floats" OFF)
 # since boot in microseconds would wrap after 35 minutes): use both
 option(ATMOS_INT_32  "integers are 32 bits" OFF)
 option(ATMOS_TIME_MS "the unit of time is the millisecond" OFF)
+# the clock never blocks and each step emits :fps (env/debug.atm counts
+# them): the most steps per second, to evaluate the implementation
+option(ESP32_FPS "steps as fast as possible, each emitting :fps" OFF)
 set(ATMOS_PIN "" CACHE STRING "checks of pin: empty (all), unchecked, or off (pin for tasks and pools only, no collection of cycles)")
 
 file(GLOB RT_SRC "${ATMOS_LANG}/rt/*.c")
@@ -87,6 +90,9 @@ if(NOT CMAKE_BUILD_EARLY_EXPANSION)
         target_compile_definitions(${COMPONENT_LIB} PRIVATE ATM_PIN_OFF)
     elseif(NOT ATMOS_PIN STREQUAL "")
         message(FATAL_ERROR "ATMOS_PIN: expected unchecked or off, got '${ATMOS_PIN}'")
+    endif()
+    if(ESP32_FPS)
+        target_compile_definitions(${COMPONENT_LIB} PRIVATE ESP32_FPS)
     endif()
     if(ATMOS_TIME_MS)
         target_compile_definitions(${COMPONENT_LIB} PRIVATE ATM_CLOCK_MS)
