@@ -1,0 +1,10 @@
+# Simulated wakeup from a previous deep sleep
+0 sleep reset deepsleep
+0 sleep cause ext1
+0 sleep wakeup_pin 32
+0 sleep rtc_int boots 4
+0 sleep rtc_bool armed true
+0 sleep rtc_str tag v1
+
+# Pin 4 goes HIGH at 700ms (wakes the second light sleep early)
+700 pin 4 1

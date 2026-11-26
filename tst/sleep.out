@@ -1,0 +1,26 @@
+boot	deepsleep	ext1	1	1	32
+rtc_boot	4	true	v1
+[drv 0ms] sleep.rtc_put_int boots 5
+[drv 0ms] sleep.rtc_put_bool armed false
+[drv 0ms] sleep.rtc_put_string tag v2
+rtc_after	5	false	v2	true
+rtc_replace	5
+[drv 0ms] sleep.rtc_remove tag
+rtc_removed	false	def
+before	light	500000	0
+[drv 0ms] sleep.light duration=500ms
+wake_ev	timer	500000	500000
+light1	timer	500000	500000
+[drv 500ms] gpio.setup 4 input_pulldown
+before	light	2000000	500000
+[drv 500ms] sleep.light duration=2000ms
+wake_ev	gpio	200000	700000
+light2	gpio	200000	700000
+catch	false	sleep.deep : no wakeup source configured (pass duration, ext0, ext1, or force=true)
+catch	false	sleep.deep : ext0 pin 5 is not a valid RTC GPIO
+catch	false	sleep.deep : digital gpio wakeup is only supported in sleep.light (use ext0 or ext1 for deep sleep)
+catch	false	sleep.light : isolate is only supported in sleep.deep
+catch	false	sleep.rtc_get_bool : key 'boots' is not a bool
+before	deep	30000000	700000
+cleanup	flushing before deep sleep
+[drv 700ms] sleep.deep duration=30000ms ext0=33:0 isolate=2

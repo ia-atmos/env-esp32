@@ -1,0 +1,74 @@
+;; sleep: wakeup/reset info, RTC memory, light sleep, :sleep.before/:sleep.wake,
+;; validation errors, and deep sleep on the host.
+
+include "../env/sleep.atm"
+include "../env/gpio.atm"
+
+;; Boot diagnostics (from tst/sleep.script)
+val causes = sleep.causes()
+val wpins  = sleep.wakeup_pins()
+print(:boot, sleep.reset_reason(), sleep.cause(), #causes, #wpins, wpins@0)
+
+;; RTC retention memory (pre-populated + read/write/remove/clear)
+print(:rtc_boot, sleep.rtc_get_int("boots", 0), sleep.rtc_get_bool("armed", false),
+      sleep.rtc_get_string("tag", "none"))
+sleep.rtc_put_int("boots", sleep.rtc_get_int("boots", 0) + 1)
+sleep.rtc_put_bool("armed", false)
+sleep.rtc_put_string("tag", "v2")
+print(:rtc_after, sleep.rtc_get_int("boots"), sleep.rtc_get_bool("armed"),
+      sleep.rtc_get_string("tag"), sleep.rtc_is_key("boots"))
+;; default replaced by stored value (ASan leak check)
+print(:rtc_replace, sleep.rtc_get_int("boots", "x" ++ "y"))
+sleep.rtc_remove("tag")
+print(:rtc_removed, sleep.rtc_is_key("tag"), sleep.rtc_get_string("tag", "def"))
+
+;; Observe :sleep.before and :sleep.wake from concurrent tasks
+spawn {
+    loop {
+        val ev = await :sleep.before
+        print(:before, ev.mode, ev.duration, ev.time)
+    }
+}
+spawn {
+    loop {
+        val ev = await :sleep.wake
+        print(:wake_ev, ev.cause, ev.slept, ev.time)
+    }
+}
+
+;; Light sleep: timer shorthand
+val w1 = sleep.light(500ms)
+print(:light1, w1.cause, w1.slept, clock.now)
+
+;; Light sleep: timer OR gpio pin (script raises pin 4 at 700ms, before 2s timer)
+gpio.setup(4, "input_pulldown")
+val w2 = sleep.light([duration=2s, gpio=[pin=4, level=1]])
+print(:light2, w2.cause, w2.slept, clock.now)
+
+;; Validation errors must NOT emit :sleep.before
+val e1, m1 = catch true { sleep.deep() }
+print(:catch, e1, m1)
+val e2, m2 = catch true { sleep.deep([ext0=[pin=5, level=0]]) }
+print(:catch, e2, m2)
+val e3, m3 = catch true { sleep.deep([gpio=[pin=4, level=0]]) }
+print(:catch, e3, m3)
+val e4, m4 = catch true { sleep.light([duration=1s, isolate=[12]]) }
+print(:catch, e4, m4)
+val e5, m5 = catch true { sleep.rtc_get_bool("boots") }
+print(:catch, e5, m5)
+
+;; Cleanup via watching :sleep.before + defer right before deep sleep
+spawn {
+    watching :sleep.before {
+        defer {
+            print(:cleanup, "flushing before deep sleep")
+        }
+        await(false)
+    }
+}
+
+sleep.deep([
+    duration = 30s,
+    ext0     = [pin=33, level=0, pull="up"],
+    isolate  = [12, 13],
+])
