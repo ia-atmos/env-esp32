@@ -1,0 +1,38 @@
+;; Manual test: Wi-Fi SoftAP mode.
+;;
+;; Creates an access point ("Atmos-ESP32-AP" / "atmos1234") and logs every
+;; client that connects, receives a DHCP IP, or disconnects. Connect with a
+;; phone or laptop to exercise the events.
+;;
+;; Build & flash:
+;;   cd esp32 && idf.py -DATMOS_APP=$PWD/../app/wifi_ap.atm build flash monitor
+
+include "../env/wifi.atm"
+include "../env/debug.atm"
+
+val AP_SSID = "Atmos-ESP32-AP"
+val AP_PASS = "atmos1234"
+
+wifi.start_ap(AP_SSID, AP_PASS, [channel=6, max_conn=4])
+
+val info = wifi.info()
+print("SoftAP started:", info.ap_ssid, "IP:", info.ap_ip,
+      "ch:", wifi.get_channel(), "MAC:", info.ap_mac)
+spawn debug.Mem()
+
+par {
+    loop {
+        val ev = await :wifi.ap.connected
+        print("[AP] Client connected:   ", ev.mac, "aid:", ev.aid)
+    }
+} with {
+    loop {
+        val ev = await :wifi.ap.sta_ip
+        print("[AP] Client assigned IP: ", ev.mac, "->", ev.ip)
+    }
+} with {
+    loop {
+        val ev = await :wifi.ap.disconnected
+        print("[AP] Client disconnected:", ev.mac, "aid:", ev.aid, "reason:", ev.reason)
+    }
+}

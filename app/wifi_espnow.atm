@@ -1,0 +1,53 @@
+;; Manual test: Wi-Fi STA + ESP-NOW coexistence.
+;;
+;; Connects to a Wi-Fi AP (using power_save="none" for reliable ESP-NOW
+;; reception) and initializes ESP-NOW on the shared radio. Periodically
+;; broadcasts an ESP-NOW message on the AP's channel while listening for
+;; incoming ESP-NOW frames and Wi-Fi link events.
+;;
+;; Note: when associated to a Wi-Fi AP, the AP dictates the radio channel;
+;; ESP-NOW peers must be on the same channel (or also connected to the AP).
+;;
+;; Build & flash:
+;;   cd esp32 && idf.py -DATMOS_APP=$PWD/../app/wifi_espnow.atm build flash monitor
+
+include "../env/wifi.atm"
+include "../env/espnow.atm"
+
+val SSID  = "YOUR_SSID"
+val PASS  = "YOUR_PASSWORD"
+val BCAST = "ff:ff:ff:ff:ff:ff"
+
+print("Wi-Fi + ESP-NOW coexistence test | MAC:", wifi.get_mac())
+
+wifi.connect(SSID, PASS, [power_save="none"])
+espnow.init()
+
+par {
+    loop {
+        val ip = await :wifi.got_ip
+        print("[WIFI] Online:", ip.ip, "| shared channel:", wifi.get_channel())
+    }
+} with {
+    loop {
+        val d = await :wifi.disconnected
+        print("[WIFI] Disconnected, reason:", d.reason, "- reconnecting in 5s")
+        await(5s)
+        wifi.connect(SSID, PASS, [power_save="none"])
+    }
+} with {
+    loop {
+        val r = await :espnow.recv
+        print("[ESPNOW] Recv from", r.mac, ":", r.data)
+    }
+} with {
+    var seq = 0
+    loop on 3s {
+        set seq = seq + 1
+        val msg = string.format("PING #%d (wifi=%s ch=%d)",
+                                seq, wifi.status(), espnow.get_channel())
+        espnow.send(BCAST, msg)
+        val s = await :espnow.send
+        print("[ESPNOW] Broadcast", msg, "->", s.status)
+    }
+}

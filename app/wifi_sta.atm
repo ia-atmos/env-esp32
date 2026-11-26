@@ -1,0 +1,51 @@
+;; Manual test: Wi-Fi Station (STA) with reactive reconnection.
+;;
+;; Edit SSID and PASS below before flashing. Connects to the AP, prints
+;; link/IP events and periodic RSSI/info while online, and automatically
+;; retries 5 seconds after any disconnect.
+;;
+;; Build & flash:
+;;   cd esp32 && idf.py -DATMOS_APP=$PWD/../app/wifi_sta.atm build flash monitor
+
+include "../env/wifi.atm"
+include "../env/debug.atm"
+
+val SSID = "YOUR_SSID"
+val PASS = "YOUR_PASSWORD"
+
+print("Wi-Fi STA test | MAC:", wifi.get_mac())
+spawn debug.Mem()
+
+loop {
+    print("Connecting to", SSID, "...")
+    wifi.connect(SSID, PASS, [hostname="atmos-esp32"])
+
+    val disc = watching :wifi.disconnected {
+        par {
+            loop {
+                val c = await :wifi.connected
+                print("Associated:", c.ssid, c.bssid, "ch", c.channel)
+            }
+        } with {
+            loop {
+                val ip = await :wifi.got_ip
+                print("Got IP:", ip.ip, "mask:", ip.netmask, "gw:", ip.gateway,
+                      "changed:", ip.changed)
+            }
+        } with {
+            loop {
+                await :wifi.lost_ip
+                print("Lost IP address")
+            }
+        } with {
+            loop on 5s {
+                val info = wifi.info()
+                print("Status:", info.state, "IP:", info.ip,
+                      "RSSI:", info.rssi, "ch:", info.channel)
+            }
+        }
+    }
+
+    print("Disconnected from", disc.ssid, "reason:", disc.reason, "- retrying in 5s")
+    await(5s)
+}

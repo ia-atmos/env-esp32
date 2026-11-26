@@ -1,0 +1,25 @@
+;; Manual test: asynchronous Wi-Fi AP scanning.
+;;
+;; Scans every 10 seconds and prints all discovered networks (up to 20,
+;; sorted by RSSI) alongside free memory. No Wi-Fi credentials required.
+;;
+;; Build & flash:
+;;   cd esp32 && idf.py -DATMOS_APP=$PWD/../app/wifi_scan.atm build flash monitor
+
+include "../env/wifi.atm"
+include "../env/debug.atm"
+
+print("Wi-Fi Scan test | MAC:", wifi.get_mac())
+spawn debug.Mem()
+
+loop {
+    print("--- starting scan ---")
+    wifi.scan([show_hidden=true, max=20])
+    val ev = await :wifi.scan
+    print(string.format("Found %d network(s):", #ev.aps))
+    loop i, ap in ev.aps {
+        print(string.format("  %2d. %-32s  %s  %4d dBm  ch %2d  %s",
+            i + 1, ap.ssid, ap.bssid, ap.rssi, ap.channel, ap.auth))
+    }
+    await(10s)
+}
