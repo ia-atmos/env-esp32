@@ -285,6 +285,66 @@ const char* drv_prefs_remove   (const char* key, bool commit);
 const char* drv_prefs_clear    (bool commit);
 
 ///////////////////////////////////////////////////////////////////////////////
+// SLEEP (deep sleep, light sleep, wakeup/reset info, and RTC retention memory)
+///////////////////////////////////////////////////////////////////////////////
+
+#define DRV_SLEEP_MAX_PINS    16
+#define DRV_SLEEP_MAX_CAUSES  12
+#define DRV_RTC_STR_MAX       64
+
+typedef struct {
+    int  pin;
+    int  level;                 // 0 (LOW) or 1 (HIGH)
+} drv_sleep_gpio_t;
+
+typedef struct {
+    int64_t duration_us;        // <= 0 if timer wakeup is disabled
+    bool    has_ext0;
+    int     ext0_pin;
+    int     ext0_level;         // 0 or 1
+    const char* ext0_pull;      // NULL/"none", "up", "down"
+
+    int     ext1_pins[DRV_SLEEP_MAX_PINS];
+    int     ext1_n;
+    const char* ext1_mode;      // "any_high" (default) or "all_low"
+
+    drv_sleep_gpio_t gpio[DRV_SLEEP_MAX_PINS]; // light sleep digital GPIO wakeup
+    int     gpio_n;
+
+    int     isolate[DRV_SLEEP_MAX_PINS];       // RTC GPIOs to isolate (deep sleep)
+    int     isolate_n;
+
+    bool    force;              // allow deep sleep with no wakeup source
+} drv_sleep_cfg_t;
+
+typedef struct {
+    const char* cause;                          // primary cause string
+    const char* causes[DRV_SLEEP_MAX_CAUSES];   // all active causes
+    int         causes_n;
+    int         pins[DRV_SLEEP_MAX_PINS];       // ext1 wakeup pins
+    int         pins_n;
+    int64_t     slept_us;                       // actual elapsed time (light sleep)
+} drv_sleep_wake_t;
+
+const char* drv_sleep_validate    (bool is_deep, const drv_sleep_cfg_t* cfg);
+const char* drv_sleep_deep        (const drv_sleep_cfg_t* cfg);
+const char* drv_sleep_light       (const drv_sleep_cfg_t* cfg, drv_sleep_wake_t* wake);
+void        drv_sleep_info        (drv_sleep_wake_t* wake);
+const char* drv_sleep_reset_reason (void);
+
+// RTC slow-memory key-value store (survives deep sleep; keys 1..15 chars).
+const char* drv_rtc_put_int  (const char* key, int64_t v);
+const char* drv_rtc_get_int  (const char* key, bool* found, int64_t* v);
+const char* drv_rtc_put_bool (const char* key, bool v);
+const char* drv_rtc_get_bool (const char* key, bool* found, bool* v);
+const char* drv_rtc_put_str  (const char* key, const char* v);
+// `*v` is valid until the next call
+const char* drv_rtc_get_str  (const char* key, bool* found, const char** v);
+const char* drv_rtc_is_key   (const char* key, bool* yes);
+const char* drv_rtc_remove   (const char* key);
+void        drv_rtc_clear    (void);
+
+///////////////////////////////////////////////////////////////////////////////
 // MEMORY
 ///////////////////////////////////////////////////////////////////////////////
 

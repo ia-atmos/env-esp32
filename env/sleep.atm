@@ -1,0 +1,398 @@
+;; Sleep: deep sleep, light sleep, wakeup/reset diagnostics, and RTC
+;; slow-memory key-value storage (survives deep sleep with zero flash wear).
+;;
+;; Events:
+;;      :sleep.before [mode, duration, time]
+;;          Emitted globally right before entering sleep (after option
+;;          validation), so concurrent tasks can run cleanup / defer blocks.
+;;      :sleep.wake [cause, causes, pins, slept, time]
+;;          Emitted immediately after `sleep.light` wakes up. (Deep sleep
+;;          reboots the board; query `sleep.cause()`, `sleep.causes()`,
+;;          `sleep.wakeup_pins()`, and `sleep.reset_reason()` at boot.)
+
+include "esp32.atm"
+
+```:prelude
+#include <string.h>
+
+static drv_sleep_cfg_t  esp_sleep_cfg;
+static drv_sleep_wake_t esp_sleep_wake;
+static const char*      esp_rtc_s;
+static int              esp_rtc_found;
+
+static AVal esp_sleep_get (ATab* t, const char* k) {
+    AVal ks = a_strz(k);
+    AVal v = a_tab_get(t, ks);
+    a_dec(ks);
+    return v;
+}
+
+static void esp_sleep_put (ATab* t, const char* k, AVal v) {
+    AVal ks = a_strz(k);
+    a_tab_set(t, ks, v);
+    a_dec(ks);
+    a_dec(v);
+}
+
+static AStatus esp_sleep_lvl (const char* fn, AVal v, int* out) {
+    if (v.type == A_NIL) {
+        *out = 0;
+        return A_OK;
+    }
+    if (v.type == A_BOOL) {
+        *out = v.u.b ? 1 : 0;
+        return A_OK;
+    }
+    if (a_isnum(v)) {
+        *out = (int) a_dbl(v);
+        return A_OK;
+    }
+    return a_error("%s : expected 0, 1, or boolean for level", fn);
+}
+
+static AStatus esp_sleep_pin_list (const char* fn, const char* field,
+                                   AVal v, int* dst, int* n_out) {
+    if (v.type != A_TAB) {
+        return a_error("%s : expected a table for %s", fn, field);
+    }
+    ATab* t = A_TAB_OF(v);
+    int n = 0;
+    for (uint32_t i = 0; i < t->an; i++) {
+        if (n >= DRV_SLEEP_MAX_PINS) {
+            return a_error("%s : too many pins in %s (max %d)", fn, field, DRV_SLEEP_MAX_PINS);
+        }
+        int64_t p = 0;
+        AStatus st = esp_int(fn, 1, t->arr[i], &p);
+        if (st != A_OK) return st;
+        dst[n++] = (int) p;
+    }
+    *n_out = n;
+    return A_OK;
+}
+
+static AStatus esp_sleep_parse_gpio_item (const char* fn, AVal v, drv_sleep_gpio_t* out) {
+    if (v.type != A_TAB) {
+        return a_error("%s : expected [pin=..., level=...] in gpio", fn);
+    }
+    ATab* t = A_TAB_OF(v);
+    int64_t p = 0;
+    AStatus st = esp_int(fn, 1, esp_sleep_get(t, "pin"), &p);
+    if (st != A_OK) return st;
+    int lvl = 0;
+    st = esp_sleep_lvl(fn, esp_sleep_get(t, "level"), &lvl);
+    if (st != A_OK) return st;
+    out->pin = (int) p;
+    out->level = lvl;
+    return A_OK;
+}
+
+static AStatus esp_sleep_prepare (int is_deep, AVal arg) {
+    const char* fn = is_deep ? "sleep.deep" : "sleep.light";
+    memset(&esp_sleep_cfg, 0, sizeof(esp_sleep_cfg));
+
+    if (arg.type == A_NIL) {
+        // let drv_sleep_validate report missing wakeup source
+    } else if (a_isnum(arg)) {
+        double d = a_dbl(arg);
+        if (d <= 0) {
+            return a_error("%s : duration must be positive", fn);
+        }
+        esp_sleep_cfg.duration_us = (int64_t) (d * A_CLOCK_US);
+    } else if (arg.type == A_TAB) {
+        ATab* t = A_TAB_OF(arg);
+
+        AVal dur = esp_sleep_get(t, "duration");
+        if (dur.type != A_NIL) {
+            if (!a_isnum(dur) || a_dbl(dur) <= 0) {
+                return a_error("%s : duration must be a positive number", fn);
+            }
+            esp_sleep_cfg.duration_us = (int64_t) (a_dbl(dur) * A_CLOCK_US);
+        }
+
+        AVal ext0 = esp_sleep_get(t, "ext0");
+        if (ext0.type != A_NIL) {
+            if (ext0.type != A_TAB) {
+                return a_error("%s : expected a table for ext0", fn);
+            }
+            ATab* e0 = A_TAB_OF(ext0);
+            int64_t p = 0;
+            AStatus st = esp_int(fn, 1, esp_sleep_get(e0, "pin"), &p);
+            if (st != A_OK) return st;
+            int lvl = 0;
+            st = esp_sleep_lvl(fn, esp_sleep_get(e0, "level"), &lvl);
+            if (st != A_OK) return st;
+            AVal pull = esp_sleep_get(e0, "pull");
+            if (pull.type != A_NIL) {
+                st = esp_str(fn, 1, pull, &esp_sleep_cfg.ext0_pull);
+                if (st != A_OK) return st;
+            }
+            esp_sleep_cfg.has_ext0 = true;
+            esp_sleep_cfg.ext0_pin = (int) p;
+            esp_sleep_cfg.ext0_level = lvl;
+        }
+
+        AVal ext1 = esp_sleep_get(t, "ext1");
+        if (ext1.type != A_NIL) {
+            if (ext1.type != A_TAB) {
+                return a_error("%s : expected a table for ext1", fn);
+            }
+            ATab* e1 = A_TAB_OF(ext1);
+            AStatus st = esp_sleep_pin_list(fn, "ext1.pins", esp_sleep_get(e1, "pins"),
+                                            esp_sleep_cfg.ext1_pins, &esp_sleep_cfg.ext1_n);
+            if (st != A_OK) return st;
+            if (esp_sleep_cfg.ext1_n == 0) {
+                return a_error("%s : ext1.pins must not be empty", fn);
+            }
+            AVal mode = esp_sleep_get(e1, "mode");
+            if (mode.type != A_NIL) {
+                st = esp_str(fn, 1, mode, &esp_sleep_cfg.ext1_mode);
+                if (st != A_OK) return st;
+            }
+        }
+
+        AVal gpio = esp_sleep_get(t, "gpio");
+        if (gpio.type != A_NIL) {
+            if (gpio.type != A_TAB) {
+                return a_error("%s : expected a table for gpio", fn);
+            }
+            ATab* gt = A_TAB_OF(gpio);
+            if (esp_sleep_get(gt, "pin").type != A_NIL) {
+                AStatus st = esp_sleep_parse_gpio_item(fn, gpio, &esp_sleep_cfg.gpio[0]);
+                if (st != A_OK) return st;
+                esp_sleep_cfg.gpio_n = 1;
+            } else {
+                for (uint32_t i = 0; i < gt->an; i++) {
+                    if (esp_sleep_cfg.gpio_n >= DRV_SLEEP_MAX_PINS) {
+                        return a_error("%s : too many gpio wakeup pins (max %d)",
+                                       fn, DRV_SLEEP_MAX_PINS);
+                    }
+                    AStatus st = esp_sleep_parse_gpio_item(
+                        fn, gt->arr[i], &esp_sleep_cfg.gpio[esp_sleep_cfg.gpio_n]);
+                    if (st != A_OK) return st;
+                    esp_sleep_cfg.gpio_n++;
+                }
+            }
+        }
+
+        AVal iso = esp_sleep_get(t, "isolate");
+        if (iso.type != A_NIL) {
+            AStatus st = esp_sleep_pin_list(fn, "isolate", iso,
+                                            esp_sleep_cfg.isolate, &esp_sleep_cfg.isolate_n);
+            if (st != A_OK) return st;
+        }
+
+        AVal force = esp_sleep_get(t, "force");
+        esp_sleep_cfg.force = (force.type != A_NIL) && a_truthy(force);
+    } else {
+        return a_error("%s : expected a duration or options table", fn);
+    }
+
+    return esp_chk(drv_sleep_validate(is_deep != 0, &esp_sleep_cfg));
+}
+
+static AVal esp_sleep_causes_vec (const drv_sleep_wake_t* w) {
+    AVal vec = a_tab();
+    ATab* vt = A_TAB_OF(vec);
+    for (int i = 0; i < w->causes_n; i++) {
+        AVal s = a_strz(w->causes[i]);
+        a_tab_set(vt, a_int(i), s);
+        a_dec(s);
+    }
+    return vec;
+}
+
+static AVal esp_sleep_pins_vec (const drv_sleep_wake_t* w) {
+    AVal vec = a_tab();
+    ATab* vt = A_TAB_OF(vec);
+    for (int i = 0; i < w->pins_n; i++) {
+        a_tab_set(vt, a_int(i), a_int(w->pins[i]));
+    }
+    return vec;
+}
+
+static void esp_sleep_wake_tab (const drv_sleep_wake_t* w, AVal* ret) {
+    AVal t = a_tab();
+    ATab* tb = A_TAB_OF(t);
+    esp_sleep_put(tb, "cause",  a_strz(w->cause ? w->cause : "none"));
+    esp_sleep_put(tb, "causes", esp_sleep_causes_vec(w));
+    esp_sleep_put(tb, "pins",   esp_sleep_pins_vec(w));
+    esp_sleep_put(tb, "slept",  a_int(w->slept_us / A_CLOCK_US));
+    a_set(ret, t);
+}
+
+static AStatus esp_rtc_put_int (AVal key, AVal v) {
+    const char* k = NULL; int64_t i = 0;
+    AStatus st = esp_str("sleep.rtc_put_int", 1, key, &k);
+    if (st == A_OK) st = esp_int("sleep.rtc_put_int", 2, v, &i);
+    if (st == A_OK) st = esp_chk(drv_rtc_put_int(k, i));
+    return st;
+}
+
+static AStatus esp_rtc_get_int (AVal key, AVal* ret) {
+    const char* k = NULL; bool found = false; int64_t i = 0;
+    AStatus st = esp_str("sleep.rtc_get_int", 1, key, &k);
+    if (st == A_OK) st = esp_chk(drv_rtc_get_int(k, &found, &i));
+    if (found) a_set(ret, a_int((AInt) i));
+    return st;
+}
+
+static AStatus esp_rtc_put_bool (AVal key, AVal v) {
+    const char* k = NULL;
+    AStatus st = esp_str("sleep.rtc_put_bool", 1, key, &k);
+    if (st == A_OK) st = esp_chk(drv_rtc_put_bool(k, a_truthy(v)));
+    return st;
+}
+
+static AStatus esp_rtc_get_bool (AVal key, AVal* ret) {
+    const char* k = NULL; bool found = false; bool b = false;
+    AStatus st = esp_str("sleep.rtc_get_bool", 1, key, &k);
+    if (st == A_OK) st = esp_chk(drv_rtc_get_bool(k, &found, &b));
+    if (found) a_set(ret, a_bool(b));
+    return st;
+}
+
+static AStatus esp_rtc_put_str (AVal key, AVal v) {
+    const char* k = NULL; const char* s = NULL;
+    AStatus st = esp_str("sleep.rtc_put_string", 1, key, &k);
+    if (st == A_OK) st = esp_str("sleep.rtc_put_string", 2, v, &s);
+    if (st == A_OK) st = esp_chk(drv_rtc_put_str(k, s));
+    return st;
+}
+
+static AStatus esp_rtc_get_str (AVal key, int* found) {
+    const char* k = NULL; bool f = false;
+    AStatus st = esp_str("sleep.rtc_get_string", 1, key, &k);
+    if (st == A_OK) st = esp_chk(drv_rtc_get_str(k, &f, &esp_rtc_s));
+    *found = f;
+    return st;
+}
+
+static AStatus esp_rtc_is_key (AVal key, AVal* ret) {
+    const char* k = NULL; bool yes = false;
+    AStatus st = esp_str("sleep.rtc_is_key", 1, key, &k);
+    if (st == A_OK) st = esp_chk(drv_rtc_is_key(k, &yes));
+    a_set(ret, a_bool(yes));
+    return st;
+}
+
+static AStatus esp_rtc_remove (AVal key) {
+    const char* k = NULL;
+    AStatus st = esp_str("sleep.rtc_remove", 1, key, &k);
+    if (st == A_OK) st = esp_chk(drv_rtc_remove(k));
+    return st;
+}
+```
+
+val sleep = []
+
+;; duration_or_opts: a clock duration (e.g. 30s) or a table
+;;   [duration=30s, ext0=[pin=33, level=0, pull="up"],
+;;    ext1=[pins=[32, 34], mode="any_high"], isolate=[12, 13], force=false]
+func sleep.deep (arg) {
+    `st = esp_sleep_prepare(1, $arg);`
+    val dur = if `:boolean esp_sleep_cfg.duration_us > 0`
+              => `:number esp_sleep_cfg.duration_us / A_CLOCK_US`
+              => nil
+    emit @:global (:sleep.before [
+        mode     = "deep",
+        duration = dur,
+        time     = clock.now,
+    ])
+    `st = esp_chk(drv_sleep_deep(&esp_sleep_cfg));`
+}
+
+;; duration_or_opts: a clock duration (e.g. 5s) or a table
+;;   [duration=5s, gpio=[pin=4, level=0], ext0=..., ext1=...]
+;; Returns [cause, causes, pins, slept] and emits :sleep.wake.
+func sleep.light (arg) {
+    `st = esp_sleep_prepare(0, $arg);`
+    val dur = if `:boolean esp_sleep_cfg.duration_us > 0`
+              => `:number esp_sleep_cfg.duration_us / A_CLOCK_US`
+              => nil
+    emit @:global (:sleep.before [
+        mode     = "light",
+        duration = dur,
+        time     = clock.now,
+    ])
+    `st = esp_chk(drv_sleep_light(&esp_sleep_cfg, &esp_sleep_wake));`
+    set clock.now = `:number drv_clock_now() / A_CLOCK_US`
+    var w = nil
+    `esp_sleep_wake_tab(&esp_sleep_wake, &$w);`
+    emit @:global (:sleep.wake [
+        cause  = w.cause,
+        causes = w.causes,
+        pins   = w.pins,
+        slept  = w.slept,
+        time   = clock.now,
+    ])
+    w
+}
+
+func sleep.cause () {
+    `drv_sleep_info(&esp_sleep_wake);`
+    `:string (esp_sleep_wake.cause ? esp_sleep_wake.cause : "none")`
+}
+
+func sleep.causes () {
+    var v = nil
+    `drv_sleep_info(&esp_sleep_wake); a_set(&$v, esp_sleep_causes_vec(&esp_sleep_wake));`
+    v
+}
+
+func sleep.wakeup_pins () {
+    var v = nil
+    `drv_sleep_info(&esp_sleep_wake); a_set(&$v, esp_sleep_pins_vec(&esp_sleep_wake));`
+    v
+}
+
+func sleep.reset_reason () {
+    `:string drv_sleep_reset_reason()`
+}
+
+func sleep.rtc_put_int (key, value) {
+    `st = esp_rtc_put_int($key, $value);`
+    true
+}
+
+func sleep.rtc_get_int (key, default) {
+    var v = default
+    `st = esp_rtc_get_int($key, &$v);`
+    v
+}
+
+func sleep.rtc_put_bool (key, value) {
+    `st = esp_rtc_put_bool($key, $value);`
+    true
+}
+
+func sleep.rtc_get_bool (key, default) {
+    var v = default
+    `st = esp_rtc_get_bool($key, &$v);`
+    v
+}
+
+func sleep.rtc_put_string (key, value) {
+    `st = esp_rtc_put_str($key, $value);`
+    true
+}
+
+func sleep.rtc_get_string (key, default) {
+    `st = esp_rtc_get_str($key, &esp_rtc_found);`
+    if `:boolean esp_rtc_found` => `:string esp_rtc_s` => default
+}
+
+func sleep.rtc_is_key (key) {
+    var v = false
+    `st = esp_rtc_is_key($key, &$v);`
+    v
+}
+
+func sleep.rtc_remove (key) {
+    `st = esp_rtc_remove($key);`
+    true
+}
+
+func sleep.rtc_clear () {
+    `drv_rtc_clear();`
+    true
+}

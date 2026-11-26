@@ -38,6 +38,7 @@ idf_component_register(
         "${REPO}/drv/esp32/espnow.c"
         "${REPO}/drv/esp32/wifi.c"
         "${REPO}/drv/esp32/prefs.c"
+        "${REPO}/drv/esp32/sleep.c"
     INCLUDE_DIRS
         "${REPO}/drv"
         "${ATMOS_LANG}/rt"

@@ -13,6 +13,7 @@
 ;;      include "<repo>/env/espnow.atm"         ;; espnow (links Wi-Fi)
 ;;      include "<repo>/env/wifi.atm"           ;; wifi (STA, SoftAP, scan; links Wi-Fi)
 ;;      include "<repo>/env/preferences.atm"    ;; preferences
+;;      include "<repo>/env/sleep.atm"          ;; sleep (deep/light sleep, RTC memory)
 ;;      include "<repo>/env/debug.atm"          ;; debug
 ;;
 ;; The modules call the drivers of drv/drv.h: those of the board

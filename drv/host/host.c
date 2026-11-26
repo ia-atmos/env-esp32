@@ -23,6 +23,12 @@
 //      <ms> wifi ap_connected <mac> <aid>          client joined SoftAP
 //      <ms> wifi ap_sta_ip <mac> <ip>              SoftAP client got IP
 //      <ms> wifi ap_disconnected <mac> <aid> <reason>
+//      0 sleep cause <name>                        simulated boot wakeup cause
+//      0 sleep reset <reason>                      simulated reset reason
+//      0 sleep wakeup_pin <pin>                    simulated ext1 wakeup pin
+//      0 sleep rtc_int <key> <val>                 pre-populated RTC int
+//      0 sleep rtc_bool <key> <true|false>         pre-populated RTC bool
+//      0 sleep rtc_str <key> <val>                 pre-populated RTC string
 //      <ms> quit                                   nothing more happens
 //      # a comment
 //
@@ -282,6 +288,52 @@ static int           SCAN_APS_N = 0;
 static char          SCAN_FILTER_SSID[33];
 static int           SCAN_FILTER_CH = 0;
 static int           SCAN_MAX_APS = 20;
+
+// Sleep & RTC retention memory host state (declared before script_read)
+static drv_sleep_wake_t SLEEP_WAKE = { .cause = "none" };
+static const char*      SLEEP_RESET = "poweron";
+
+#define HOST_RTC_SLOTS 32
+typedef enum { HRTC_NONE = 0, HRTC_INT, HRTC_BOOL, HRTC_STR } host_rtc_type_t;
+typedef struct {
+    bool used;
+    host_rtc_type_t type;
+    char key[16];
+    int64_t i;
+    char s[DRV_RTC_STR_MAX];
+} host_rtc_slot_t;
+static host_rtc_slot_t HOST_RTC[HOST_RTC_SLOTS];
+
+static const char* host_rtc_put_raw (const char* key, host_rtc_type_t type,
+                                     int64_t i, const char* s) {
+    for (int k = 0; k < HOST_RTC_SLOTS; k++) {
+        if (HOST_RTC[k].used && !strcmp(HOST_RTC[k].key, key)) {
+            HOST_RTC[k].type = type;
+            HOST_RTC[k].i = i;
+            if (s != NULL) {
+                snprintf(HOST_RTC[k].s, sizeof(HOST_RTC[k].s), "%s", s);
+            } else {
+                HOST_RTC[k].s[0] = '\0';
+            }
+            return NULL;
+        }
+    }
+    for (int k = 0; k < HOST_RTC_SLOTS; k++) {
+        if (!HOST_RTC[k].used) {
+            HOST_RTC[k].used = true;
+            HOST_RTC[k].type = type;
+            snprintf(HOST_RTC[k].key, sizeof(HOST_RTC[k].key), "%s", key);
+            HOST_RTC[k].i = i;
+            if (s != NULL) {
+                snprintf(HOST_RTC[k].s, sizeof(HOST_RTC[k].s), "%s", s);
+            } else {
+                HOST_RTC[k].s[0] = '\0';
+            }
+            return NULL;
+        }
+    }
+    return "full";
+}
 
 static void wifi_q_put (drv_wifi_evt_t e) {
     if (Q_WIFI_N < WIFI_QUEUE_LEN) {
@@ -591,6 +643,87 @@ static void script_read (void) {
             } else {
                 script_fail(path, n, line);
             }
+        } else if (!strcmp(what, "sleep")) {
+            char sub[24];
+            int len = 0;
+            if (ms != 0 || sscanf(rest, "%23s %n", sub, &len) < 1) {
+                script_fail(path, n, line);
+            }
+            const char* args = rest + len;
+            if (!strcmp(sub, "cause")) {
+                static const char* causes[] = {
+                    "none", "timer", "ext0", "ext1", "gpio",
+                    "touch", "ulp", "uart", "wifi", "bt", "other"
+                };
+                char name[16];
+                if (sscanf(args, "%15s", name) != 1) {
+                    script_fail(path, n, line);
+                }
+                const char* found = NULL;
+                for (size_t i = 0; i < sizeof(causes)/sizeof(causes[0]); i++) {
+                    if (!strcmp(name, causes[i])) {
+                        found = causes[i];
+                    }
+                }
+                if (found == NULL) {
+                    script_fail(path, n, line);
+                }
+                if (strcmp(found, "none") && SLEEP_WAKE.causes_n < DRV_SLEEP_MAX_CAUSES) {
+                    SLEEP_WAKE.causes[SLEEP_WAKE.causes_n++] = found;
+                    SLEEP_WAKE.cause = SLEEP_WAKE.causes[0];
+                }
+            } else if (!strcmp(sub, "reset")) {
+                static const char* reasons[] = {
+                    "poweron", "ext", "sw", "panic", "int_wdt", "task_wdt",
+                    "wdt", "deepsleep", "brownout", "sdio", "usb", "jtag",
+                    "efuse", "pwr_glitch", "cpu_lockup", "unknown"
+                };
+                char name[16];
+                if (sscanf(args, "%15s", name) != 1) {
+                    script_fail(path, n, line);
+                }
+                const char* found = NULL;
+                for (size_t i = 0; i < sizeof(reasons)/sizeof(reasons[0]); i++) {
+                    if (!strcmp(name, reasons[i])) {
+                        found = reasons[i];
+                    }
+                }
+                if (found == NULL) {
+                    script_fail(path, n, line);
+                }
+                SLEEP_RESET = found;
+            } else if (!strcmp(sub, "wakeup_pin")) {
+                int p = -1;
+                if (sscanf(args, "%d", &p) != 1 || !valid_pin(p) ||
+                    SLEEP_WAKE.pins_n >= DRV_SLEEP_MAX_PINS) {
+                    script_fail(path, n, line);
+                }
+                SLEEP_WAKE.pins[SLEEP_WAKE.pins_n++] = p;
+            } else if (!strcmp(sub, "rtc_int")) {
+                char key[16];
+                long long v = 0;
+                if (sscanf(args, "%15s %lld", key, &v) != 2 ||
+                    host_rtc_put_raw(key, HRTC_INT, (int64_t)v, NULL) != NULL) {
+                    script_fail(path, n, line);
+                }
+            } else if (!strcmp(sub, "rtc_bool")) {
+                char key[16], b[16];
+                if (sscanf(args, "%15s %15s", key, b) != 2 ||
+                    (strcmp(b, "true") && strcmp(b, "false")) ||
+                    host_rtc_put_raw(key, HRTC_BOOL, !strcmp(b, "true") ? 1 : 0, NULL) != NULL) {
+                    script_fail(path, n, line);
+                }
+            } else if (!strcmp(sub, "rtc_str")) {
+                char key[16];
+                int koff = 0;
+                if (sscanf(args, "%15s %n", key, &koff) < 1 ||
+                    host_rtc_put_raw(key, HRTC_STR, 0, args + koff) != NULL) {
+                    script_fail(path, n, line);
+                }
+            } else {
+                script_fail(path, n, line);
+            }
+            continue;
         } else if (!strcmp(what, "quit")) {
             p.kind = P_QUIT;
         } else {
@@ -1468,4 +1601,350 @@ void drv_meminfo (drv_meminfo_t* m) {
     m->internal_min_free     = 270 * 1024;
     m->internal_largest_free = 110 * 1024;
     m->stack_free            = 4096;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// SLEEP AND RTC RETENTION MEMORY
+///////////////////////////////////////////////////////////////////////////////
+
+static bool valid_rtc_pin (int p) {
+    return p==0 || p==2 || p==4 || (p>=12 && p<=15) ||
+           (p>=25 && p<=27) || (p>=32 && p<=39);
+}
+
+const char* drv_sleep_validate (bool is_deep, const drv_sleep_cfg_t* cfg) {
+    const char* fn = is_deep ? "sleep.deep" : "sleep.light";
+    if (cfg == NULL) {
+        return drv_errf("%s : missing sleep configuration", fn);
+    }
+    if (cfg->duration_us < 0) {
+        return drv_errf("%s : duration must be positive", fn);
+    }
+    if (cfg->has_ext0) {
+        if (!valid_rtc_pin(cfg->ext0_pin)) {
+            return drv_errf("%s : ext0 pin %d is not a valid RTC GPIO", fn, cfg->ext0_pin);
+        }
+        if (cfg->ext0_level != 0 && cfg->ext0_level != 1) {
+            return drv_errf("%s : ext0 level must be 0 or 1", fn);
+        }
+        if (cfg->ext0_pull != NULL &&
+            strcmp(cfg->ext0_pull, "none") &&
+            strcmp(cfg->ext0_pull, "up") &&
+            strcmp(cfg->ext0_pull, "down")) {
+            return drv_errf("%s : invalid ext0 pull '%s' (expected none, up, down)",
+                            fn, cfg->ext0_pull);
+        }
+    }
+    if (cfg->ext1_n > 0) {
+        for (int i = 0; i < cfg->ext1_n; i++) {
+            if (!valid_rtc_pin(cfg->ext1_pins[i])) {
+                return drv_errf("%s : ext1 pin %d is not a valid RTC GPIO", fn, cfg->ext1_pins[i]);
+            }
+        }
+        if (cfg->ext1_mode != NULL &&
+            strcmp(cfg->ext1_mode, "any_high") &&
+            strcmp(cfg->ext1_mode, "all_low")) {
+            return drv_errf("%s : invalid ext1 mode '%s' (expected any_high or all_low)",
+                            fn, cfg->ext1_mode);
+        }
+    }
+    if (cfg->gpio_n > 0) {
+        if (is_deep) {
+            return drv_errf("%s : digital gpio wakeup is only supported in sleep.light "
+                            "(use ext0 or ext1 for deep sleep)", fn);
+        }
+        for (int i = 0; i < cfg->gpio_n; i++) {
+            if (!valid_pin(cfg->gpio[i].pin)) {
+                return drv_errf("%s : invalid GPIO pin %d", fn, cfg->gpio[i].pin);
+            }
+            if (cfg->gpio[i].level != 0 && cfg->gpio[i].level != 1) {
+                return drv_errf("%s : gpio wakeup level must be 0 or 1", fn);
+            }
+        }
+    }
+    if (cfg->isolate_n > 0) {
+        if (!is_deep) {
+            return drv_errf("%s : isolate is only supported in sleep.deep", fn);
+        }
+        for (int i = 0; i < cfg->isolate_n; i++) {
+            if (!valid_rtc_pin(cfg->isolate[i])) {
+                return drv_errf("%s : isolate pin %d is not a valid RTC GPIO", fn, cfg->isolate[i]);
+            }
+        }
+    }
+    bool has_wake = (cfg->duration_us > 0) || cfg->has_ext0 ||
+                    (cfg->ext1_n > 0) || (cfg->gpio_n > 0);
+    if (!has_wake && !(is_deep && cfg->force)) {
+        return drv_errf("%s : no wakeup source configured "
+                        "(pass duration, ext0, ext1%s)",
+                        fn, is_deep ? ", or force=true" : ", or gpio");
+    }
+    return NULL;
+}
+
+const char* drv_sleep_deep (const drv_sleep_cfg_t* cfg) {
+    script_read();
+    const char* err = drv_sleep_validate(true, cfg);
+    if (err != NULL) {
+        return err;
+    }
+    char buf[160];
+    int n = snprintf(buf, sizeof(buf), "sleep.deep");
+    if (cfg->duration_us > 0) {
+        n += snprintf(buf + n, sizeof(buf) - (size_t)n, " duration=%lldms",
+                      (long long)(cfg->duration_us / 1000));
+    }
+    if (cfg->has_ext0) {
+        n += snprintf(buf + n, sizeof(buf) - (size_t)n, " ext0=%d:%d",
+                      cfg->ext0_pin, cfg->ext0_level);
+    }
+    if (cfg->ext1_n > 0) {
+        n += snprintf(buf + n, sizeof(buf) - (size_t)n, " ext1=%d(%s)",
+                      cfg->ext1_n, cfg->ext1_mode ? cfg->ext1_mode : "any_high");
+    }
+    if (cfg->isolate_n > 0) {
+        n += snprintf(buf + n, sizeof(buf) - (size_t)n, " isolate=%d", cfg->isolate_n);
+    }
+    if (cfg->force) {
+        snprintf(buf + n, sizeof(buf) - (size_t)n, " force");
+    }
+    trace("%s", buf);
+    QUIT = true;
+    return NULL;
+}
+
+static bool pin_matches_light_wake (const drv_sleep_cfg_t* cfg, int pin, int level,
+                                    const char** cause_out, int* ext1_pin_out) {
+    for (int i = 0; i < cfg->gpio_n; i++) {
+        if (cfg->gpio[i].pin == pin && cfg->gpio[i].level == level) {
+            *cause_out = "gpio";
+            return true;
+        }
+    }
+    if (cfg->has_ext0 && cfg->ext0_pin == pin && cfg->ext0_level == level) {
+        *cause_out = "ext0";
+        return true;
+    }
+    if (cfg->ext1_n > 0) {
+        bool all_low = (cfg->ext1_mode != NULL && !strcmp(cfg->ext1_mode, "all_low"));
+        for (int i = 0; i < cfg->ext1_n; i++) {
+            if (cfg->ext1_pins[i] == pin) {
+                if (!all_low && level == 1) {
+                    *cause_out = "ext1";
+                    *ext1_pin_out = pin;
+                    return true;
+                }
+                if (all_low && level == 0) {
+                    bool ok = true;
+                    for (int j = 0; j < cfg->ext1_n; j++) {
+                        int lv = (cfg->ext1_pins[j] == pin) ? level : PINS[cfg->ext1_pins[j]].level;
+                        if (lv != 0) ok = false;
+                    }
+                    if (ok) {
+                        *cause_out = "ext1";
+                        *ext1_pin_out = pin;
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    return false;
+}
+
+const char* drv_sleep_light (const drv_sleep_cfg_t* cfg, drv_sleep_wake_t* wake) {
+    script_read();
+    const char* err = drv_sleep_validate(false, cfg);
+    if (err != NULL) {
+        return err;
+    }
+    trace("sleep.light duration=%lldms",
+          (long long)(cfg->duration_us > 0 ? cfg->duration_us / 1000 : 0));
+
+    int64_t t0 = NOW;
+    int64_t deadline = (cfg->duration_us > 0) ? (t0 + cfg->duration_us) : -1;
+
+    // Find the earliest pending pin event matching a configured wakeup source
+    int best_idx = -1;
+    const char* pin_cause = NULL;
+    int ext1_pin = -1;
+    for (int i = 0; i < NPEND; i++) {
+        if (PEND[i].kind != P_PIN) continue;
+        if (deadline >= 0 && PEND[i].at > deadline) continue;
+        const char* c = NULL;
+        int ep = -1;
+        if (pin_matches_light_wake(cfg, PEND[i].a, PEND[i].b, &c, &ep)) {
+            if (best_idx == -1 || PEND[i].at < PEND[best_idx].at ||
+                (PEND[i].at == PEND[best_idx].at && PEND[i].seq < PEND[best_idx].seq)) {
+                best_idx = i;
+                pin_cause = c;
+                ext1_pin = ep;
+            }
+        }
+    }
+
+    memset(wake, 0, sizeof(*wake));
+    int64_t target = t0;
+    if (best_idx != -1) {
+        target = PEND[best_idx].at;
+        wake->cause = pin_cause;
+        wake->causes[0] = pin_cause;
+        wake->causes_n = 1;
+        if (ext1_pin >= 0) {
+            wake->pins[0] = ext1_pin;
+            wake->pins_n = 1;
+        }
+    } else if (deadline >= 0) {
+        target = deadline;
+        wake->cause = "timer";
+        wake->causes[0] = "timer";
+        wake->causes_n = 1;
+    } else {
+        wake->cause = "none";
+    }
+
+    if (target > NOW) {
+        sleep_us(target - NOW);
+        NOW = target;
+    }
+    // Fire any pending events up to wakeup time (updating pin levels)
+    while (1) {
+        int k = pending_next();
+        if (k == -1 || PEND[k].at > NOW) break;
+        pending_t p = PEND[k];
+        PEND[k] = PEND[--NPEND];
+        pending_fire(p);
+    }
+    wake->slept_us = NOW - t0;
+    SLEEP_WAKE = *wake;
+    return NULL;
+}
+
+void drv_sleep_info (drv_sleep_wake_t* wake) {
+    script_read();
+    *wake = SLEEP_WAKE;
+}
+
+const char* drv_sleep_reset_reason (void) {
+    script_read();
+    return SLEEP_RESET;
+}
+
+static const char* hrtc_check_key (const char* fn, const char* key) {
+    size_t n = (key != NULL) ? strlen(key) : 0;
+    if (n < 1 || n > 15) {
+        return drv_errf("%s : key length must be between 1 and 15 characters", fn);
+    }
+    return NULL;
+}
+
+static host_rtc_slot_t* hrtc_find (const char* key) {
+    script_read();
+    for (int i = 0; i < HOST_RTC_SLOTS; i++) {
+        if (HOST_RTC[i].used && !strcmp(HOST_RTC[i].key, key)) {
+            return &HOST_RTC[i];
+        }
+    }
+    return NULL;
+}
+
+const char* drv_rtc_put_int (const char* key, int64_t v) {
+    script_read();
+    const char* err = hrtc_check_key("sleep.rtc_put_int", key);
+    if (err != NULL) return err;
+    if (host_rtc_put_raw(key, HRTC_INT, v, NULL) != NULL) {
+        return drv_errf("sleep.rtc_put_int : RTC memory store is full (max %d keys)", HOST_RTC_SLOTS);
+    }
+    trace("sleep.rtc_put_int %s %lld", key, (long long)v);
+    return NULL;
+}
+
+const char* drv_rtc_get_int (const char* key, bool* found, int64_t* v) {
+    const char* err = hrtc_check_key("sleep.rtc_get_int", key);
+    if (err != NULL) return err;
+    host_rtc_slot_t* sl = hrtc_find(key);
+    if (sl == NULL) { *found = false; return NULL; }
+    if (sl->type != HRTC_INT) {
+        return drv_errf("sleep.rtc_get_int : key '%s' is not an int", key);
+    }
+    *found = true;
+    *v = sl->i;
+    return NULL;
+}
+
+const char* drv_rtc_put_bool (const char* key, bool v) {
+    script_read();
+    const char* err = hrtc_check_key("sleep.rtc_put_bool", key);
+    if (err != NULL) return err;
+    if (host_rtc_put_raw(key, HRTC_BOOL, v ? 1 : 0, NULL) != NULL) {
+        return drv_errf("sleep.rtc_put_bool : RTC memory store is full (max %d keys)", HOST_RTC_SLOTS);
+    }
+    trace("sleep.rtc_put_bool %s %s", key, v ? "true" : "false");
+    return NULL;
+}
+
+const char* drv_rtc_get_bool (const char* key, bool* found, bool* v) {
+    const char* err = hrtc_check_key("sleep.rtc_get_bool", key);
+    if (err != NULL) return err;
+    host_rtc_slot_t* sl = hrtc_find(key);
+    if (sl == NULL) { *found = false; return NULL; }
+    if (sl->type != HRTC_BOOL) {
+        return drv_errf("sleep.rtc_get_bool : key '%s' is not a bool", key);
+    }
+    *found = true;
+    *v = (sl->i != 0);
+    return NULL;
+}
+
+const char* drv_rtc_put_str (const char* key, const char* v) {
+    script_read();
+    const char* err = hrtc_check_key("sleep.rtc_put_string", key);
+    if (err != NULL) return err;
+    size_t len = (v != NULL) ? strlen(v) : 0;
+    if (len >= DRV_RTC_STR_MAX) {
+        return drv_errf("sleep.rtc_put_string : string length %d exceeds max %d",
+                        (int)len, DRV_RTC_STR_MAX - 1);
+    }
+    if (host_rtc_put_raw(key, HRTC_STR, 0, v) != NULL) {
+        return drv_errf("sleep.rtc_put_string : RTC memory store is full (max %d keys)", HOST_RTC_SLOTS);
+    }
+    trace("sleep.rtc_put_string %s %s", key, v);
+    return NULL;
+}
+
+const char* drv_rtc_get_str (const char* key, bool* found, const char** v) {
+    const char* err = hrtc_check_key("sleep.rtc_get_string", key);
+    if (err != NULL) return err;
+    host_rtc_slot_t* sl = hrtc_find(key);
+    if (sl == NULL) { *found = false; return NULL; }
+    if (sl->type != HRTC_STR) {
+        return drv_errf("sleep.rtc_get_string : key '%s' is not a string", key);
+    }
+    *found = true;
+    *v = sl->s;
+    return NULL;
+}
+
+const char* drv_rtc_is_key (const char* key, bool* yes) {
+    const char* err = hrtc_check_key("sleep.rtc_is_key", key);
+    if (err != NULL) return err;
+    *yes = (hrtc_find(key) != NULL);
+    return NULL;
+}
+
+const char* drv_rtc_remove (const char* key) {
+    const char* err = hrtc_check_key("sleep.rtc_remove", key);
+    if (err != NULL) return err;
+    host_rtc_slot_t* sl = hrtc_find(key);
+    if (sl != NULL) {
+        memset(sl, 0, sizeof(*sl));
+        trace("sleep.rtc_remove %s", key);
+    }
+    return NULL;
+}
+
+void drv_rtc_clear (void) {
+    script_read();
+    memset(HOST_RTC, 0, sizeof(HOST_RTC));
+    trace("sleep.rtc_clear");
 }
