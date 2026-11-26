@@ -1,0 +1,44 @@
+;; Manual test: Deep Sleep with RTC timer OR BOOT button (GPIO 0) wakeup
+;; and RTC slow-memory retention across reboots.
+;;
+;; No extra wiring required: GPIO 0 is the onboard BOOT button (an RTC GPIO).
+;; Each wake increments a boot counter stored in RTC RAM, waits 3 seconds,
+;; then sleeps for 10 seconds or until BOOT is pressed (whichever comes first).
+;;
+;; Build & flash:
+;;   cd esp32 && idf.py -DATMOS_APP=$PWD/../app/sleep_deep.atm build flash monitor
+
+include "../env/sleep.atm"
+
+val boots = sleep.rtc_get_int("boots", 0) + 1
+val prev  = sleep.rtc_get_string("last_cause", "none")
+val clean = sleep.rtc_get_int("clean", 0)
+sleep.rtc_put_int("boots", boots)
+sleep.rtc_put_string("last_cause", sleep.cause())
+sleep.rtc_put_int("clean", 0)
+
+print("========================================")
+print("Deep Sleep test | boot #", boots)
+print("  reset_reason:", sleep.reset_reason())
+print("  wake cause:  ", sleep.cause(), "| prev:", prev)
+print("  wakeup_pins: ", #sleep.wakeup_pins(), "| prev clean sleep:", clean)
+
+;; Cleanup task that reacts right before deep sleep powers the chip down.
+;; Note: avoid `print` in :sleep.before (same reaction as sleep.deep).
+spawn {
+    watching :sleep.before {
+        defer {
+            sleep.rtc_put_int("clean", 1)
+        }
+        await(false)
+    }
+}
+
+print("Awake for 3s... (next: deep sleep 10s OR press BOOT / GPIO 0)")
+await(3s)
+print("Entering deep sleep now.")
+
+sleep.deep([
+    duration = 10s,
+    ext0     = [pin=0, level=0, pull="up"],
+])

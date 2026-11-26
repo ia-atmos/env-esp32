@@ -1,0 +1,48 @@
+;; Manual test: Light Sleep with timer OR BOOT button (GPIO 0) wakeup.
+;;
+;; Unlike deep sleep, light sleep preserves SRAM and all running Atmos tasks:
+;; the `cycle` counter and spawned observer tasks stay alive across every wake.
+;; Press the onboard BOOT button (GPIO 0) during sleep to wake early.
+;;
+;; Build & flash:
+;;   cd esp32 && idf.py -DATMOS_APP=$PWD/../app/sleep_light.atm build flash monitor
+
+include "../env/sleep.atm"
+include "../env/gpio.atm"
+include "../env/debug.atm"
+
+print("Light Sleep test | reset:", sleep.reset_reason())
+gpio.setup(0, "input_pullup")
+
+;; Note: avoid `print` inside :sleep.before (same reaction as sleep.light).
+var before_count = 0
+spawn {
+    loop {
+        await :sleep.before
+        set before_count = before_count + 1
+    }
+}
+
+spawn {
+    loop {
+        val ev = await :sleep.wake
+        print("[event] woke up! cause:", ev.cause, "slept:", ev.slept,
+              "| before_count:", before_count)
+    }
+}
+
+var cycle = 0
+loop {
+    set cycle = cycle + 1
+    val m = debug.meminfo()
+    print(string.format("--- cycle #%d | free heap: %d KB | awake 2s ---",
+                        cycle, m.heap_free // 1024))
+    await(2s)
+
+    print("Sleeping 5s (or press BOOT / GPIO 0 to wake early)...")
+    val w = sleep.light([
+        duration = 5s,
+        gpio     = [pin=0, level=0],
+    ])
+    print("Resumed cycle #", cycle, "| cause:", w.cause, "| slept:", w.slept)
+}

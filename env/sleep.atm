@@ -5,6 +5,8 @@
 ;;      :sleep.before [mode, duration, time]
 ;;          Emitted globally right before entering sleep (after option
 ;;          validation), so concurrent tasks can run cleanup / defer blocks.
+;;          Sleep gates/powers down peripherals immediately without draining
+;;          them; keep `:sleep.before` to synchronous state or shutdown work.
 ;;      :sleep.wake [cause, causes, pins, slept, time]
 ;;          Emitted immediately after `sleep.light` wakes up. (Deep sleep
 ;;          reboots the board; query `sleep.cause()`, `sleep.causes()`,
