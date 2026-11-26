@@ -1,0 +1,14 @@
+# Visible APs in the simulated radio environment
+0 wifi ap_add WeakNet   11:22:33:44:55:01 -82 11 wpa2
+0 wifi ap_add LabNet    aa:bb:cc:dd:ee:01 -45 6  wpa2_wpa3
+0 wifi ap_add GuestOpen 11:22:33:44:55:02 -60 6  open
+
+# STA connection events (after two 100ms scans finish at 200ms)
+250 wifi connected LabNet aa:bb:cc:dd:ee:01 6
+300 wifi got_ip 192.168.1.42 255.255.255.0 192.168.1.1 changed
+400 wifi lost_ip
+
+# SoftAP client lifecycle
+500 wifi ap_connected de:ad:be:ef:00:01 1
+520 wifi ap_sta_ip de:ad:be:ef:00:01 192.168.4.2
+600 wifi ap_disconnected de:ad:be:ef:00:01 1 8

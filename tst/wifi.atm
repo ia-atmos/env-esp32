@@ -1,0 +1,78 @@
+;; wifi: scan, STA connect/disconnect/IP, SoftAP, espnow coexistence, errors
+
+include "../env/wifi.atm"
+include "../env/espnow.atm"
+
+print(:init, wifi.status(), wifi.get_mac())
+
+;; scan all APs (sorted by RSSI descending)
+wifi.scan()
+val sc = await :wifi.scan
+print(:scan, #sc.aps, sc.time)
+loop _, ap in sc.aps {
+    print(:ap, ap.ssid, ap.bssid, ap.rssi, ap.channel, ap.auth)
+}
+
+;; filtered scan (channel + max)
+wifi.scan([channel=6, max=1])
+val sc2 = await :wifi.scan
+print(:scan_ch6, #sc2.aps, sc2.aps@0.ssid)
+
+;; STA connect -> connected -> got_ip -> info -> lost_ip -> disconnect
+wifi.connect("LabNet", "secret123", [hostname="atmos-esp32", power_save="none"])
+print(:connecting, wifi.status())
+
+val c = await :wifi.connected
+print(:connected, c.ssid, c.bssid, c.channel, c.time)
+
+val ip = await :wifi.got_ip
+print(:got_ip, ip.ip, ip.netmask, ip.gateway, ip.changed, ip.time)
+
+val info = wifi.info()
+print(:info, info.state, info.ssid, info.ip, info.channel, info.rssi, info.ap_active)
+
+val lost = await :wifi.lost_ip
+print(:lost_ip, wifi.status(), lost.time)
+
+wifi.disconnect()
+val d = await :wifi.disconnected
+print(:disconnected, d.ssid, d.reason, wifi.status())
+
+;; SoftAP + ESP-NOW coexistence
+espnow.init()
+wifi.start_ap("AtmosAP", "password123", [channel=6, max_conn=4])
+val ap_info = wifi.info()
+print(:ap_on, ap_info.ap_active, ap_info.ap_ssid, ap_info.ap_ip,
+      ap_info.channel, wifi.get_channel(), espnow.get_channel())
+
+val sta_in = await :wifi.ap.connected
+print(:ap_conn, sta_in.mac, sta_in.aid, sta_in.time)
+
+val sta_ip = await :wifi.ap.sta_ip
+print(:ap_ip, sta_ip.mac, sta_ip.ip, sta_ip.time)
+
+val sta_out = await :wifi.ap.disconnected
+print(:ap_disc, sta_out.mac, sta_out.aid, sta_out.reason, sta_out.time)
+
+wifi.stop_ap()
+print(:ap_off, wifi.info().ap_active)
+
+;; ESP-NOW continues working after stopping SoftAP
+espnow.send("ff:ff:ff:ff:ff:ff", "HI")
+val s = await :espnow.send
+print(:espnow_ok, s.status)
+
+wifi.stop()
+print(:stopped, wifi.status())
+
+;; validation errors
+val e1, m1 = catch true { wifi.connect("") }
+print(:catch, e1, m1)
+val e2, m2 = catch true { wifi.connect("Net", "pw", [bssid="bad"]) }
+print(:catch, e2, m2)
+val e3, m3 = catch true { wifi.connect("Net", "pw", [power_save="bogus"]) }
+print(:catch, e3, m3)
+val e4, m4 = catch true { wifi.start_ap("AP", "short") }
+print(:catch, e4, m4)
+val e5, m5 = catch true { wifi.scan([channel=15]) }
+print(:catch, e5, m5)

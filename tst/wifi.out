@@ -1,0 +1,33 @@
+init	stopped	24:0a:c4:00:00:01
+[drv 0ms] wifi.scan
+scan	3	100000
+ap	LabNet	aa:bb:cc:dd:ee:01	-45	6	wpa2_wpa3
+ap	GuestOpen	11:22:33:44:55:02	-60	6	open
+ap	WeakNet	11:22:33:44:55:01	-82	11	wpa2
+[drv 100ms] wifi.scan
+scan_ch6	1	LabNet
+[drv 200ms] wifi.connect LabNet
+connecting	connecting
+connected	LabNet	aa:bb:cc:dd:ee:01	6	250000
+got_ip	192.168.1.42	255.255.255.0	192.168.1.1	true	300000
+info	got_ip	LabNet	192.168.1.42	6	-55	false
+lost_ip	connected	400000
+[drv 400ms] wifi.disconnect
+disconnected	LabNet	8	disconnected
+[drv 400ms] espnow.init
+[drv 400ms] wifi.start_ap AtmosAP 6
+ap_on	true	AtmosAP	192.168.4.1	6	6	6
+ap_conn	de:ad:be:ef:00:01	1	500000
+ap_ip	de:ad:be:ef:00:01	192.168.4.2	520000
+ap_disc	de:ad:be:ef:00:01	1	8	600000
+[drv 600ms] wifi.stop_ap
+ap_off	false
+[drv 600ms] espnow.send ff:ff:ff:ff:ff:ff HI
+espnow_ok	success
+[drv 600ms] wifi.stop
+stopped	stopped
+catch	false	wifi.connect : ssid must be 1 to 32 characters
+catch	false	wifi.connect : invalid BSSID format 'bad'
+catch	false	wifi.connect : invalid power_save 'bogus' (expected none, min, max)
+catch	false	wifi.start_ap : password must be 8 to 64 characters (or empty for open AP)
+catch	false	wifi.scan : invalid Wi-Fi channel (1-14)
