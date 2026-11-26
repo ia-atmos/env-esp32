@@ -11,6 +11,7 @@
 ;;      include "<repo>/env/gpio.atm"           ;; gpio
 ;;      include "<repo>/env/ir.atm"             ;; ir
 ;;      include "<repo>/env/espnow.atm"         ;; espnow (links Wi-Fi)
+;;      include "<repo>/env/wifi.atm"           ;; wifi (STA, SoftAP, scan; links Wi-Fi)
 ;;      include "<repo>/env/preferences.atm"    ;; preferences
 ;;      include "<repo>/env/debug.atm"          ;; debug
 ;;

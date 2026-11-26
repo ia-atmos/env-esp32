@@ -15,6 +15,14 @@
 //                  (a repeat repeats the last frame, as on the board, and
 //                  with no frame before it counts as invalid)
 //      <ms> espnow <mac> <data>                    a message arrives
+//      <ms> wifi ap_add <ssid> <bssid> <rssi> <ch> <auth>   a visible AP
+//      <ms> wifi connected <ssid> <bssid> <ch>     STA associated
+//      <ms> wifi got_ip <ip> <mask> <gw> [changed] STA obtained IP
+//      <ms> wifi disconnected <reason> [ssid] [bssid]
+//      <ms> wifi lost_ip                           STA lost IP
+//      <ms> wifi ap_connected <mac> <aid>          client joined SoftAP
+//      <ms> wifi ap_sta_ip <mac> <ip>              SoftAP client got IP
+//      <ms> wifi ap_disconnected <mac> <aid> <reason>
 //      <ms> quit                                   nothing more happens
 //      # a comment
 //
@@ -177,7 +185,7 @@ static const char* bad_channel (const char* fn, int ch) {
 // PENDING: what happens at a future time
 ///////////////////////////////////////////////////////////////////////////////
 
-typedef enum { P_FADE, P_PIN, P_IR, P_ESPNOW, P_QUIT } pending_kind_t;
+typedef enum { P_FADE, P_PIN, P_IR, P_ESPNOW, P_WIFI, P_WIFI_SCAN, P_QUIT } pending_kind_t;
 
 typedef struct {
     int64_t at;
@@ -186,6 +194,7 @@ typedef struct {
     int a, b;           // fade: channel; pin: pin, level
     drv_evt_t ir;
     drv_espnow_evt_t now;
+    drv_wifi_evt_t wifi;
 } pending_t;
 
 static pending_t PEND[PENDING_MAX];
@@ -238,6 +247,84 @@ static bool ESPNOW_ON = false;
 static drv_espnow_evt_t Q_NOW[ESPNOW_QUEUE_LEN];
 static int Q_NOW_HEAD = 0, Q_NOW_N = 0;
 
+#define WIFI_QUEUE_LEN 16
+typedef enum {
+    WST_STOPPED = 0,
+    WST_DISCONNECTED,
+    WST_CONNECTING,
+    WST_CONNECTED,
+    WST_GOT_IP,
+} host_wifi_st_t;
+
+static bool WIFI_INITED = false;
+static bool WIFI_STA_ON = false;
+static bool WIFI_AP_ON  = false;
+static bool WIFI_SCANNING = false;
+static host_wifi_st_t WIFI_ST = WST_STOPPED;
+static char WIFI_SSID[33];
+static char WIFI_BSSID[18];
+static char WIFI_IP[16];
+static char WIFI_MASK[16];
+static char WIFI_GW[16];
+static int  WIFI_CH = 0;
+static int  WIFI_RSSI = -55;
+static char WIFI_AP_SSID[33];
+static char WIFI_AP_IP[16];
+static int  WIFI_AP_CH = 0;
+static int  CHANNEL = 1;            // shared radio channel (Wi-Fi + ESP-NOW)
+static drv_wifi_evt_t Q_WIFI[WIFI_QUEUE_LEN];
+static int Q_WIFI_HEAD = 0, Q_WIFI_N = 0;
+
+static drv_wifi_ap_t HOST_APS[DRV_WIFI_SCAN_MAX];
+static int           HOST_APS_N = 0;
+static drv_wifi_ap_t SCAN_APS[DRV_WIFI_SCAN_MAX];
+static int           SCAN_APS_N = 0;
+static char          SCAN_FILTER_SSID[33];
+static int           SCAN_FILTER_CH = 0;
+static int           SCAN_MAX_APS = 20;
+
+static void wifi_q_put (drv_wifi_evt_t e) {
+    if (Q_WIFI_N < WIFI_QUEUE_LEN) {
+        Q_WIFI[(Q_WIFI_HEAD + Q_WIFI_N++) % WIFI_QUEUE_LEN] = e;
+    }
+}
+
+static void wifi_scan_finish (void) {
+    if (!WIFI_SCANNING) {
+        return;
+    }
+    WIFI_SCANNING = false;
+    SCAN_APS_N = 0;
+    for (int i = 0; i < HOST_APS_N; i++) {
+        if (SCAN_FILTER_SSID[0] != '\0' && strcmp(HOST_APS[i].ssid, SCAN_FILTER_SSID)) {
+            continue;
+        }
+        if (SCAN_FILTER_CH > 0 && HOST_APS[i].channel != SCAN_FILTER_CH) {
+            continue;
+        }
+        SCAN_APS[SCAN_APS_N++] = HOST_APS[i];
+    }
+    // sort by RSSI descending (matches ESP-IDF)
+    for (int i = 0; i < SCAN_APS_N; i++) {
+        for (int j = i + 1; j < SCAN_APS_N; j++) {
+            if (SCAN_APS[j].rssi > SCAN_APS[i].rssi) {
+                drv_wifi_ap_t tmp = SCAN_APS[i];
+                SCAN_APS[i] = SCAN_APS[j];
+                SCAN_APS[j] = tmp;
+            }
+        }
+    }
+    if (SCAN_APS_N > SCAN_MAX_APS) {
+        SCAN_APS_N = SCAN_MAX_APS;
+    }
+    drv_wifi_evt_t e = {
+        .kind = DRV_WIFI_SCAN_DONE,
+        .time_us = NOW,
+        .scan_count = SCAN_APS_N,
+    };
+    wifi_q_put(e);
+}
+
 static void pending_fire (pending_t p) {
     switch (p.kind) {
         case P_FADE: {
@@ -281,6 +368,53 @@ static void pending_fire (pending_t p) {
                 p.now.time_us = NOW;
                 Q_NOW[(Q_NOW_HEAD + Q_NOW_N++) % ESPNOW_QUEUE_LEN] = p.now;
             }
+            break;
+        case P_WIFI:
+            if (!WIFI_INITED) {
+                break;
+            }
+            p.wifi.time_us = NOW;
+            switch (p.wifi.kind) {
+                case DRV_WIFI_CONNECTED:
+                    WIFI_ST = WST_CONNECTED;
+                    strcpy(WIFI_SSID, p.wifi.ssid);
+                    strcpy(WIFI_BSSID, p.wifi.bssid);
+                    WIFI_CH = p.wifi.channel;
+                    CHANNEL = p.wifi.channel;
+                    break;
+                case DRV_WIFI_DISCONNECTED:
+                    if (p.wifi.ssid[0] == '\0') {
+                        strcpy(p.wifi.ssid, WIFI_SSID);
+                    }
+                    if (p.wifi.bssid[0] == '\0') {
+                        strcpy(p.wifi.bssid, WIFI_BSSID);
+                    }
+                    if (WIFI_ST != WST_STOPPED) {
+                        WIFI_ST = WST_DISCONNECTED;
+                    }
+                    WIFI_SSID[0] = WIFI_BSSID[0] = '\0';
+                    WIFI_IP[0] = WIFI_MASK[0] = WIFI_GW[0] = '\0';
+                    WIFI_CH = 0;
+                    break;
+                case DRV_WIFI_GOT_IP:
+                    WIFI_ST = WST_GOT_IP;
+                    strcpy(WIFI_IP, p.wifi.ip);
+                    strcpy(WIFI_MASK, p.wifi.netmask);
+                    strcpy(WIFI_GW, p.wifi.gateway);
+                    break;
+                case DRV_WIFI_LOST_IP:
+                    if (WIFI_ST == WST_GOT_IP) {
+                        WIFI_ST = WST_CONNECTED;
+                    }
+                    WIFI_IP[0] = WIFI_MASK[0] = WIFI_GW[0] = '\0';
+                    break;
+                default:
+                    break;
+            }
+            wifi_q_put(p.wifi);
+            break;
+        case P_WIFI_SCAN:
+            wifi_scan_finish();
             break;
         case P_QUIT:
             QUIT = true;
@@ -382,6 +516,81 @@ static void script_read (void) {
                 script_fail(path, n, line);
             }
             memcpy(p.now.data, data, p.now.len);
+        } else if (!strcmp(what, "wifi")) {
+            char sub[24];
+            int len = 0;
+            if (sscanf(rest, "%23s %n", sub, &len) < 1) {
+                script_fail(path, n, line);
+            }
+            const char* args = rest + len;
+            if (!strcmp(sub, "ap_add")) {
+                static const char* auths[] = {
+                    "open", "wep", "wpa", "wpa2", "wpa_wpa2",
+                    "enterprise", "wpa3", "wpa2_wpa3", "wapi", "owe", "unknown"
+                };
+                char ssid[33], bssid[18], auth[16];
+                int rssi, ch;
+                if (sscanf(args, "%32s %17s %d %d %15s", ssid, bssid, &rssi, &ch, auth) != 5 ||
+                    HOST_APS_N >= DRV_WIFI_SCAN_MAX) {
+                    script_fail(path, n, line);
+                }
+                const char* aname = NULL;
+                for (size_t i = 0; i < sizeof(auths)/sizeof(auths[0]); i++) {
+                    if (!strcmp(auth, auths[i])) {
+                        aname = auths[i];
+                    }
+                }
+                if (aname == NULL) {
+                    script_fail(path, n, line);
+                }
+                drv_wifi_ap_t* a = &HOST_APS[HOST_APS_N++];
+                strcpy(a->ssid, ssid);
+                strcpy(a->bssid, bssid);
+                a->rssi = rssi;
+                a->channel = ch;
+                a->auth = aname;
+                continue;
+            }
+            p.kind = P_WIFI;
+            if (!strcmp(sub, "connected")) {
+                p.wifi.kind = DRV_WIFI_CONNECTED;
+                if (sscanf(args, "%32s %17s %d", p.wifi.ssid, p.wifi.bssid, &p.wifi.channel) != 3) {
+                    script_fail(path, n, line);
+                }
+            } else if (!strcmp(sub, "got_ip")) {
+                char chg[16] = "";
+                p.wifi.kind = DRV_WIFI_GOT_IP;
+                if (sscanf(args, "%15s %15s %15s %15s",
+                           p.wifi.ip, p.wifi.netmask, p.wifi.gateway, chg) < 3) {
+                    script_fail(path, n, line);
+                }
+                p.wifi.changed = !strcmp(chg, "changed");
+            } else if (!strcmp(sub, "disconnected")) {
+                p.wifi.kind = DRV_WIFI_DISCONNECTED;
+                if (sscanf(args, "%d %32s %17s",
+                           &p.wifi.reason, p.wifi.ssid, p.wifi.bssid) < 1) {
+                    script_fail(path, n, line);
+                }
+            } else if (!strcmp(sub, "lost_ip")) {
+                p.wifi.kind = DRV_WIFI_LOST_IP;
+            } else if (!strcmp(sub, "ap_connected")) {
+                p.wifi.kind = DRV_WIFI_AP_CONNECTED;
+                if (sscanf(args, "%17s %d", p.wifi.bssid, &p.wifi.aid) != 2) {
+                    script_fail(path, n, line);
+                }
+            } else if (!strcmp(sub, "ap_sta_ip")) {
+                p.wifi.kind = DRV_WIFI_AP_STA_IP;
+                if (sscanf(args, "%17s %15s", p.wifi.bssid, p.wifi.ip) != 2) {
+                    script_fail(path, n, line);
+                }
+            } else if (!strcmp(sub, "ap_disconnected")) {
+                p.wifi.kind = DRV_WIFI_AP_DISCONNECTED;
+                if (sscanf(args, "%17s %d %d", p.wifi.bssid, &p.wifi.aid, &p.wifi.reason) != 3) {
+                    script_fail(path, n, line);
+                }
+            } else {
+                script_fail(path, n, line);
+            }
         } else if (!strcmp(what, "quit")) {
             p.kind = P_QUIT;
         } else {
@@ -418,7 +627,7 @@ int64_t drv_clock_wait (int64_t max_us) {
     if (QUIT) {
         return -1;
     }
-    if (Q_GPIO.n>0 || Q_IR.n>0 || Q_NOW_N>0) {
+    if (Q_GPIO.n>0 || Q_IR.n>0 || Q_NOW_N>0 || Q_WIFI_N>0) {
         return 0;           // the secondaries have events to emit
     }
     int k = pending_next();
@@ -702,7 +911,6 @@ bool drv_ir_next (drv_evt_t* evt) {
 
 #define HOST_MAC "24:0a:c4:00:00:01"
 
-static int CHANNEL = 1;
 static char PEERS[20][18];
 static int NPEERS = 0;
 
@@ -804,6 +1012,250 @@ bool drv_espnow_next (drv_espnow_evt_t* evt) {
     *evt = Q_NOW[Q_NOW_HEAD];
     Q_NOW_HEAD = (Q_NOW_HEAD + 1) % ESPNOW_QUEUE_LEN;
     Q_NOW_N--;
+    return true;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// WI-FI
+///////////////////////////////////////////////////////////////////////////////
+
+#define HOST_AP_MAC "24:0a:c4:00:00:02"
+
+static const char* host_wifi_state (void) {
+    switch (WIFI_ST) {
+        case WST_STOPPED:      return "stopped";
+        case WST_DISCONNECTED: return "disconnected";
+        case WST_CONNECTING:   return "connecting";
+        case WST_CONNECTED:    return "connected";
+        case WST_GOT_IP:       return "got_ip";
+    }
+    return "stopped";
+}
+
+static bool peek_wifi (int64_t* t) {
+    if (Q_WIFI_N == 0) {
+        return false;
+    }
+    *t = Q_WIFI[Q_WIFI_HEAD].time_us;
+    return true;
+}
+
+static void host_wifi_init (void) {
+    if (!WIFI_INITED) {
+        drv_source_add(DRV_SRC_WIFI, peek_wifi);
+        WIFI_INITED = true;
+        script_read();
+    }
+}
+
+const char* drv_wifi_connect (const char* ssid, const char* password,
+                              const drv_wifi_connect_opts_t* opts) {
+    if (ssid == NULL || ssid[0] == '\0' || strlen(ssid) > 32) {
+        return drv_errf("wifi.connect : ssid must be 1 to 32 characters");
+    }
+    if (password != NULL && strlen(password) > 64) {
+        return drv_errf("wifi.connect : password must be at most 64 characters");
+    }
+    if (opts != NULL) {
+        if (opts->bssid != NULL && !valid_mac(opts->bssid)) {
+            return drv_errf("wifi.connect : invalid BSSID format '%s'", opts->bssid);
+        }
+        if (opts->channel < 0 || opts->channel > 14) {
+            return drv_errf("wifi.connect : invalid Wi-Fi channel (1-14)");
+        }
+        if (opts->power_save != NULL &&
+            strcmp(opts->power_save, "none") &&
+            strcmp(opts->power_save, "min") &&
+            strcmp(opts->power_save, "max")) {
+            return drv_errf("wifi.connect : invalid power_save '%s' "
+                            "(expected none, min, max)", opts->power_save);
+        }
+    }
+    host_wifi_init();
+    WIFI_STA_ON = true;
+    WIFI_ST = WST_CONNECTING;
+    strcpy(WIFI_SSID, ssid);
+    trace("wifi.connect %s", ssid);
+    return NULL;
+}
+
+const char* drv_wifi_disconnect (void) {
+    if (!WIFI_STA_ON || WIFI_ST == WST_STOPPED || WIFI_ST == WST_DISCONNECTED) {
+        return NULL;
+    }
+    trace("wifi.disconnect");
+    pending_t p = { .at = NOW, .kind = P_WIFI };
+    p.wifi.kind = DRV_WIFI_DISCONNECTED;
+    p.wifi.reason = 8;      // WIFI_REASON_ASSOC_LEAVE
+    strcpy(p.wifi.ssid, WIFI_SSID);
+    strcpy(p.wifi.bssid, WIFI_BSSID);
+    pending_add(p);
+    return NULL;
+}
+
+const char* drv_wifi_stop (void) {
+    if (WIFI_ST != WST_STOPPED || WIFI_AP_ON) {
+        trace("wifi.stop");
+    }
+    WIFI_STA_ON = false;
+    WIFI_AP_ON = false;
+    WIFI_SCANNING = false;
+    WIFI_ST = WST_STOPPED;
+    WIFI_SSID[0] = WIFI_BSSID[0] = '\0';
+    WIFI_IP[0] = WIFI_MASK[0] = WIFI_GW[0] = '\0';
+    WIFI_AP_SSID[0] = WIFI_AP_IP[0] = '\0';
+    WIFI_CH = 0;
+    return NULL;
+}
+
+const char* drv_wifi_scan (const drv_wifi_scan_opts_t* opts) {
+    if (WIFI_SCANNING) {
+        return drv_errf("wifi.scan : scan already in progress");
+    }
+    SCAN_FILTER_SSID[0] = '\0';
+    SCAN_FILTER_CH = 0;
+    SCAN_MAX_APS = 20;
+    if (opts != NULL) {
+        if (opts->ssid != NULL) {
+            if (strlen(opts->ssid) > 32) {
+                return drv_errf("wifi.scan : ssid must be at most 32 characters");
+            }
+            strcpy(SCAN_FILTER_SSID, opts->ssid);
+        }
+        if (opts->channel < 0 || opts->channel > 14) {
+            return drv_errf("wifi.scan : invalid Wi-Fi channel (1-14)");
+        }
+        SCAN_FILTER_CH = opts->channel;
+        if (opts->max_aps > 0) {
+            SCAN_MAX_APS = (opts->max_aps > DRV_WIFI_SCAN_MAX) ? DRV_WIFI_SCAN_MAX : opts->max_aps;
+        }
+    }
+    host_wifi_init();
+    if (WIFI_ST == WST_STOPPED) {
+        WIFI_ST = WST_DISCONNECTED;
+    }
+    WIFI_SCANNING = true;
+    trace("wifi.scan");
+    pending_t p = { .at = NOW + 100000, .kind = P_WIFI_SCAN };
+    pending_add(p);
+    return NULL;
+}
+
+int drv_wifi_scan_result (int index, drv_wifi_ap_t* ap) {
+    if (index < 0 || index >= SCAN_APS_N) {
+        return 0;
+    }
+    *ap = SCAN_APS[index];
+    return 1;
+}
+
+const char* drv_wifi_start_ap (const char* ssid, const char* password,
+                               const drv_wifi_ap_opts_t* opts) {
+    if (ssid == NULL || ssid[0] == '\0' || strlen(ssid) > 32) {
+        return drv_errf("wifi.start_ap : ssid must be 1 to 32 characters");
+    }
+    size_t plen = (password != NULL) ? strlen(password) : 0;
+    if (plen > 0 && (plen < 8 || plen > 64)) {
+        return drv_errf("wifi.start_ap : password must be 8 to 64 characters "
+                        "(or empty for open AP)");
+    }
+    int ch = 1;
+    if (opts != NULL) {
+        if (opts->channel != 0) {
+            if (opts->channel < 1 || opts->channel > 13) {
+                return drv_errf("wifi.start_ap : invalid AP channel (1-13)");
+            }
+            ch = opts->channel;
+        }
+        if (opts->max_conn != 0 && (opts->max_conn < 1 || opts->max_conn > 10)) {
+            return drv_errf("wifi.start_ap : max_conn must be between 1 and 10");
+        }
+    }
+    host_wifi_init();
+    WIFI_AP_ON = true;
+    strcpy(WIFI_AP_SSID, ssid);
+    strcpy(WIFI_AP_IP, "192.168.4.1");
+    WIFI_AP_CH = ch;
+    if (WIFI_ST != WST_CONNECTED && WIFI_ST != WST_GOT_IP) {
+        CHANNEL = ch;
+    }
+    if (WIFI_ST == WST_STOPPED) {
+        WIFI_ST = WST_DISCONNECTED;
+    }
+    trace("wifi.start_ap %s %d", ssid, ch);
+    return NULL;
+}
+
+const char* drv_wifi_stop_ap (void) {
+    if (!WIFI_AP_ON) {
+        return NULL;
+    }
+    WIFI_AP_ON = false;
+    WIFI_AP_SSID[0] = '\0';
+    WIFI_AP_IP[0] = '\0';
+    WIFI_AP_CH = 0;
+    if (!WIFI_STA_ON && !ESPNOW_ON) {
+        WIFI_ST = WST_STOPPED;
+    }
+    trace("wifi.stop_ap");
+    return NULL;
+}
+
+const char* drv_wifi_status (const char** state) {
+    *state = host_wifi_state();
+    return NULL;
+}
+
+const char* drv_wifi_get_mac (char mac[18]) {
+    strcpy(mac, HOST_MAC);
+    return NULL;
+}
+
+const char* drv_wifi_get_channel (int* channel) {
+    if (!WIFI_INITED && !ESPNOW_ON) {
+        return drv_errf("wifi.get_channel : failed to get wifi channel: ESP_ERR_WIFI_NOT_INIT");
+    }
+    *channel = CHANNEL;
+    return NULL;
+}
+
+const char* drv_wifi_info (drv_wifi_info_t* info) {
+    memset(info, 0, sizeof(*info));
+    info->state = host_wifi_state();
+    info->ap_active = WIFI_AP_ON;
+    strcpy(info->mac, HOST_MAC);
+    strcpy(info->ap_mac, HOST_AP_MAC);
+    if (WIFI_ST == WST_CONNECTED || WIFI_ST == WST_GOT_IP) {
+        strcpy(info->ssid, WIFI_SSID);
+        strcpy(info->bssid, WIFI_BSSID);
+        info->channel = WIFI_CH;
+        info->rssi = WIFI_RSSI;
+        info->has_rssi = true;
+    }
+    if (WIFI_ST == WST_GOT_IP) {
+        strcpy(info->ip, WIFI_IP);
+        strcpy(info->netmask, WIFI_MASK);
+        strcpy(info->gateway, WIFI_GW);
+    }
+    if (WIFI_AP_ON) {
+        strcpy(info->ap_ssid, WIFI_AP_SSID);
+        strcpy(info->ap_ip, WIFI_AP_IP);
+        if (info->channel == 0) {
+            info->channel = (WIFI_AP_CH > 0) ? WIFI_AP_CH : CHANNEL;
+        }
+    } else if (info->channel == 0 && (WIFI_STA_ON || ESPNOW_ON)) {
+        info->channel = CHANNEL;
+    }
+    return NULL;
+}
+
+bool drv_wifi_next (drv_wifi_evt_t* evt) {
+    if (Q_WIFI_N == 0) {
+        return false;
+    }
+    *evt = Q_WIFI[Q_WIFI_HEAD];
+    Q_WIFI_HEAD = (Q_WIFI_HEAD + 1) % WIFI_QUEUE_LEN;
+    Q_WIFI_N--;
     return true;
 }
 

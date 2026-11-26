@@ -91,14 +91,28 @@ static esp_err_t init_wifi (void) {
     }
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     err = esp_wifi_init(&cfg);
+    bool fresh = (err == ESP_OK);
     if (err!=ESP_OK && err!=ESP_ERR_INVALID_STATE) {
         return err;
     }
-    if ((err = esp_wifi_set_storage(WIFI_STORAGE_RAM)) != ESP_OK) return err;
-    if ((err = esp_wifi_set_mode(WIFI_MODE_STA))      != ESP_OK) return err;
-    if ((err = esp_wifi_start())                      != ESP_OK) return err;
-    if ((err = esp_wifi_set_ps(WIFI_PS_NONE))         != ESP_OK) return err;
-    return esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
+    if (fresh) {
+        if ((err = esp_wifi_set_storage(WIFI_STORAGE_RAM)) != ESP_OK) return err;
+        if ((err = esp_wifi_set_mode(WIFI_MODE_STA))      != ESP_OK) return err;
+        if ((err = esp_wifi_start())                      != ESP_OK) return err;
+        if ((err = esp_wifi_set_ps(WIFI_PS_NONE))         != ESP_OK) return err;
+        return esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
+    }
+    // Wi-Fi was already initialized (e.g., by drv/esp32/wifi.c): preserve AP
+    // if active and avoid overriding an AP-negotiated channel.
+    wifi_mode_t cur = WIFI_MODE_NULL;
+    if (esp_wifi_get_mode(&cur) != ESP_OK || cur == WIFI_MODE_NULL) {
+        if ((err = esp_wifi_set_mode(WIFI_MODE_STA)) != ESP_OK) return err;
+    } else if (cur == WIFI_MODE_AP) {
+        if ((err = esp_wifi_set_mode(WIFI_MODE_APSTA)) != ESP_OK) return err;
+    }
+    if ((err = esp_wifi_start()) != ESP_OK) return err;
+    if ((err = esp_wifi_set_ps(WIFI_PS_NONE)) != ESP_OK) return err;
+    return ESP_OK;
 }
 
 static const char* fail (const char* fn, const char* what, esp_err_t err) {

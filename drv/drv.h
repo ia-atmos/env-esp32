@@ -67,6 +67,7 @@ typedef enum {
     DRV_SRC_GPIO,
     DRV_SRC_IR,
     DRV_SRC_ESPNOW,
+    DRV_SRC_WIFI,
     DRV_SRC_MAX
 } drv_src_t;
 
@@ -166,6 +167,100 @@ const char* drv_espnow_get_mac     (char mac[18]);
 const char* drv_espnow_get_channel (int* channel);
 const char* drv_espnow_set_channel (int channel);
 bool        drv_espnow_next        (drv_espnow_evt_t* evt);
+
+///////////////////////////////////////////////////////////////////////////////
+// WI-FI (STA, SoftAP, and AP scan)
+///////////////////////////////////////////////////////////////////////////////
+
+#define DRV_WIFI_SCAN_MAX 32
+
+typedef enum {
+    DRV_WIFI_NONE = 0,
+    DRV_WIFI_CONNECTED,         // STA associated with AP
+    DRV_WIFI_DISCONNECTED,      // STA lost association or connect failed
+    DRV_WIFI_GOT_IP,            // STA obtained IPv4 address
+    DRV_WIFI_LOST_IP,           // STA lost IPv4 address
+    DRV_WIFI_SCAN_DONE,         // async AP scan completed
+    DRV_WIFI_AP_CONNECTED,      // client joined SoftAP
+    DRV_WIFI_AP_DISCONNECTED,   // client left SoftAP
+    DRV_WIFI_AP_STA_IP,         // DHCP server assigned IP to a SoftAP client
+} drv_wifi_kind_t;
+
+typedef struct {
+    char ssid[33];
+    char bssid[18];             // "aa:bb:cc:dd:ee:ff"
+    int  rssi;
+    int  channel;
+    const char* auth;           // "open", "wep", "wpa", "wpa2", ...
+} drv_wifi_ap_t;
+
+// Apart from drv_evt_t, which would grow by the strings.
+typedef struct {
+    drv_wifi_kind_t kind;
+    int64_t time_us;
+    char ssid[33];              // CONNECTED, DISCONNECTED
+    char bssid[18];             // CONNECTED, DISCONNECTED, AP_* (client mac)
+    char ip[16];                // GOT_IP, AP_STA_IP
+    char netmask[16];           // GOT_IP
+    char gateway[16];           // GOT_IP
+    int  channel;               // CONNECTED
+    int  reason;                // DISCONNECTED, AP_DISCONNECTED
+    int  aid;                   // AP_CONNECTED, AP_DISCONNECTED
+    bool changed;               // GOT_IP
+    int  scan_count;            // SCAN_DONE
+} drv_wifi_evt_t;
+
+typedef struct {
+    const char* bssid;          // optional "aa:bb:cc:dd:ee:ff", or NULL
+    int         channel;        // 0 = any, 1..14
+    const char* hostname;       // optional DHCP hostname, or NULL
+    const char* power_save;     // NULL, "none", "min", "max"
+} drv_wifi_connect_opts_t;
+
+typedef struct {
+    const char* ssid;           // optional SSID filter, or NULL
+    int         channel;        // 0 = all, 1..14
+    bool        show_hidden;
+    int         max_aps;        // <= 0 for default (20), capped at DRV_WIFI_SCAN_MAX
+} drv_wifi_scan_opts_t;
+
+typedef struct {
+    int  channel;               // 0 = default (1), 1..13
+    int  max_conn;              // 0 = default (4), 1..10
+    bool hidden;
+} drv_wifi_ap_opts_t;
+
+typedef struct {
+    const char* state;          // "stopped", "disconnected", "connecting", "connected", "got_ip"
+    bool ap_active;
+    char mac[18];
+    char ap_mac[18];
+    char ssid[33];
+    char bssid[18];
+    char ip[16];
+    char netmask[16];
+    char gateway[16];
+    char ap_ssid[33];
+    char ap_ip[16];
+    int  channel;
+    int  rssi;
+    bool has_rssi;
+} drv_wifi_info_t;
+
+const char* drv_wifi_connect     (const char* ssid, const char* password,
+                                  const drv_wifi_connect_opts_t* opts);
+const char* drv_wifi_disconnect  (void);
+const char* drv_wifi_stop        (void);
+const char* drv_wifi_scan        (const drv_wifi_scan_opts_t* opts);
+int         drv_wifi_scan_result (int index, drv_wifi_ap_t* ap);
+const char* drv_wifi_start_ap    (const char* ssid, const char* password,
+                                  const drv_wifi_ap_opts_t* opts);
+const char* drv_wifi_stop_ap     (void);
+const char* drv_wifi_status      (const char** state);
+const char* drv_wifi_info        (drv_wifi_info_t* info);
+const char* drv_wifi_get_mac     (char mac[18]);
+const char* drv_wifi_get_channel (int* channel);
+bool        drv_wifi_next        (drv_wifi_evt_t* evt);
 
 ///////////////////////////////////////////////////////////////////////////////
 // PREFERENCES (NVS): one namespace open at a time

@@ -1,0 +1,262 @@
+;; Wi-Fi: station (STA), SoftAP, and asynchronous AP scanning.
+;;
+;; Events:
+;;      :wifi.connected       [ssid, bssid, channel, time]
+;;      :wifi.disconnected    [ssid, bssid, reason, time]
+;;      :wifi.got_ip          [ip, netmask, gateway, changed, time]
+;;      :wifi.lost_ip         [time]
+;;      :wifi.scan            [aps, time]
+;;      :wifi.ap.connected    [mac, aid, time]
+;;      :wifi.ap.disconnected [mac, aid, reason, time]
+;;      :wifi.ap.sta_ip       [mac, ip, time]
+;;
+;; All events are subtags of `:wifi`, and the SoftAP events are subtags of
+;; `:wifi.ap`. Can be used alongside `env/espnow.atm` (when connected to an
+;; AP, the AP dictates the radio channel).
+
+include "esp32.atm"
+
+```:prelude
+static drv_wifi_evt_t esp_wifi_evt;
+static char           esp_wifi_mac[18];
+static const char*    esp_wifi_st;
+static int            esp_wifi_ch;
+
+static AStatus esp_wifi_opt_str (const char* fn, int i, AVal v, const char** out) {
+    if (v.type == A_NIL) {
+        *out = NULL;
+        return A_OK;
+    }
+    return esp_str(fn, i, v, out);
+}
+
+static AStatus esp_wifi_opt_int (const char* fn, int i, AVal v, int* out) {
+    if (v.type == A_NIL) {
+        *out = 0;
+        return A_OK;
+    }
+    int64_t n = 0;
+    AStatus st = esp_int(fn, i, v, &n);
+    if (st == A_OK) {
+        *out = (int) n;
+    }
+    return st;
+}
+
+static void esp_wifi_put (ATab* t, const char* k, AVal v) {
+    AVal ks = a_strz(k);
+    a_tab_set(t, ks, v);
+    a_dec(ks);
+    a_dec(v);
+}
+
+static void esp_wifi_put_str_nz (ATab* t, const char* k, const char* s) {
+    if (s != NULL && s[0] != '\0') {
+        esp_wifi_put(t, k, a_strz(s));
+    }
+}
+
+static AStatus esp_wifi_connect (AVal ssid, AVal pass, AVal bssid,
+                                 AVal ch, AVal host, AVal ps) {
+    const char* s = NULL;
+    const char* p = NULL;
+    drv_wifi_connect_opts_t o = {0};
+    AStatus st = esp_str("wifi.connect", 1, ssid, &s);
+    if (st == A_OK) st = esp_wifi_opt_str("wifi.connect", 2, pass, &p);
+    if (st == A_OK) st = esp_wifi_opt_str("wifi.connect", 3, bssid, &o.bssid);
+    if (st == A_OK) st = esp_wifi_opt_int("wifi.connect", 3, ch, &o.channel);
+    if (st == A_OK) st = esp_wifi_opt_str("wifi.connect", 3, host, &o.hostname);
+    if (st == A_OK) st = esp_wifi_opt_str("wifi.connect", 3, ps, &o.power_save);
+    if (st == A_OK) st = esp_chk(drv_wifi_connect(s, p, &o));
+    return st;
+}
+
+static AStatus esp_wifi_scan (AVal ssid, AVal ch, AVal hidden, AVal max_aps) {
+    drv_wifi_scan_opts_t o = {0};
+    AStatus st = esp_wifi_opt_str("wifi.scan", 1, ssid, &o.ssid);
+    if (st == A_OK) st = esp_wifi_opt_int("wifi.scan", 1, ch, &o.channel);
+    if (st == A_OK) st = esp_wifi_opt_int("wifi.scan", 1, max_aps, &o.max_aps);
+    o.show_hidden = (hidden.type != A_NIL) && a_truthy(hidden);
+    if (st == A_OK) st = esp_chk(drv_wifi_scan(&o));
+    return st;
+}
+
+static AStatus esp_wifi_start_ap (AVal ssid, AVal pass,
+                                  AVal ch, AVal max_conn, AVal hidden) {
+    const char* s = NULL;
+    const char* p = NULL;
+    drv_wifi_ap_opts_t o = {0};
+    AStatus st = esp_str("wifi.start_ap", 1, ssid, &s);
+    if (st == A_OK) st = esp_wifi_opt_str("wifi.start_ap", 2, pass, &p);
+    if (st == A_OK) st = esp_wifi_opt_int("wifi.start_ap", 3, ch, &o.channel);
+    if (st == A_OK) st = esp_wifi_opt_int("wifi.start_ap", 3, max_conn, &o.max_conn);
+    o.hidden = (hidden.type != A_NIL) && a_truthy(hidden);
+    if (st == A_OK) st = esp_chk(drv_wifi_start_ap(s, p, &o));
+    return st;
+}
+
+static AStatus esp_wifi_info (AVal* ret) {
+    drv_wifi_info_t info;
+    AStatus st = esp_chk(drv_wifi_info(&info));
+    if (st != A_OK) {
+        return st;
+    }
+    AVal t = a_tab();
+    ATab* tb = A_TAB_OF(t);
+    esp_wifi_put(tb, "state", a_strz(info.state));
+    esp_wifi_put(tb, "ap_active", a_bool(info.ap_active));
+    esp_wifi_put_str_nz(tb, "mac", info.mac);
+    esp_wifi_put_str_nz(tb, "ap_mac", info.ap_mac);
+    esp_wifi_put_str_nz(tb, "ssid", info.ssid);
+    esp_wifi_put_str_nz(tb, "bssid", info.bssid);
+    esp_wifi_put_str_nz(tb, "ip", info.ip);
+    esp_wifi_put_str_nz(tb, "netmask", info.netmask);
+    esp_wifi_put_str_nz(tb, "gateway", info.gateway);
+    esp_wifi_put_str_nz(tb, "ap_ssid", info.ap_ssid);
+    esp_wifi_put_str_nz(tb, "ap_ip", info.ap_ip);
+    if (info.channel > 0) {
+        esp_wifi_put(tb, "channel", a_int(info.channel));
+    }
+    if (info.has_rssi) {
+        esp_wifi_put(tb, "rssi", a_int(info.rssi));
+    }
+    a_set(ret, t);
+    return A_OK;
+}
+
+static void esp_wifi_scan_aps (int n, AVal* ret) {
+    AVal vec = a_tab();
+    ATab* vt = A_TAB_OF(vec);
+    drv_wifi_ap_t ap;
+    for (int i = 0; i < n; i++) {
+        if (!drv_wifi_scan_result(i, &ap)) {
+            break;
+        }
+        AVal item = a_tab();
+        ATab* it = A_TAB_OF(item);
+        esp_wifi_put(it, "ssid", a_strz(ap.ssid));
+        esp_wifi_put(it, "bssid", a_strz(ap.bssid));
+        esp_wifi_put(it, "rssi", a_int(ap.rssi));
+        esp_wifi_put(it, "channel", a_int(ap.channel));
+        esp_wifi_put(it, "auth", a_strz(ap.auth));
+        a_tab_set(vt, a_int(i), item);
+        a_dec(item);
+    }
+    a_set(ret, vec);
+}
+```
+
+val wifi = []
+
+;; options: [bssid="aa:bb:cc:dd:ee:ff", channel=6, hostname="esp32", power_save="none"|"min"|"max"]
+func wifi.connect (ssid, password, options) {
+    val bssid      = if options => options.bssid      => nil
+    val channel    = if options => options.channel    => nil
+    val hostname   = if options => options.hostname   => nil
+    val power_save = if options => options.power_save => nil
+    `st = esp_wifi_connect($ssid, $password, $bssid, $channel, $hostname, $power_save);`
+}
+
+func wifi.disconnect () {
+    `st = esp_chk(drv_wifi_disconnect());`
+}
+
+func wifi.stop () {
+    `st = esp_chk(drv_wifi_stop());`
+}
+
+;; options: [ssid="...", channel=0, show_hidden=false, max=20]
+func wifi.scan (options) {
+    val ssid        = if options => options.ssid        => nil
+    val channel     = if options => options.channel     => nil
+    val show_hidden = if options => options.show_hidden => nil
+    val max_aps     = if options => options.max         => nil
+    `st = esp_wifi_scan($ssid, $channel, $show_hidden, $max_aps);`
+}
+
+;; options: [channel=1, max_conn=4, hidden=false]
+func wifi.start_ap (ssid, password, options) {
+    val channel  = if options => options.channel  => nil
+    val max_conn = if options => options.max_conn => nil
+    val hidden   = if options => options.hidden   => nil
+    `st = esp_wifi_start_ap($ssid, $password, $channel, $max_conn, $hidden);`
+}
+
+func wifi.stop_ap () {
+    `st = esp_chk(drv_wifi_stop_ap());`
+}
+
+func wifi.status () {
+    `st = esp_chk(drv_wifi_status(&esp_wifi_st));`
+    `:string esp_wifi_st`
+}
+
+func wifi.info () {
+    var v = nil
+    `st = esp_wifi_info(&$v);`
+    v
+}
+
+func wifi.get_mac () {
+    `st = esp_chk(drv_wifi_get_mac(esp_wifi_mac));`
+    `:string esp_wifi_mac`
+}
+
+func wifi.get_channel () {
+    `st = esp_chk(drv_wifi_get_channel(&esp_wifi_ch));`
+    `:number esp_wifi_ch`
+}
+
+set esp32.drain@(`:number DRV_SRC_WIFI`) = func () {
+    `drv_wifi_next(&esp_wifi_evt);`
+    val time = `:number esp_wifi_evt.time_us / A_CLOCK_US`
+    val kind = `:number esp_wifi_evt.kind`
+    ifs {
+        kind == `:number DRV_WIFI_CONNECTED` => emit(:wifi.connected [
+            ssid    = `:string esp_wifi_evt.ssid`,
+            bssid   = `:string esp_wifi_evt.bssid`,
+            channel = `:number esp_wifi_evt.channel`,
+            time    = time,
+        ])
+        kind == `:number DRV_WIFI_DISCONNECTED` => emit(:wifi.disconnected [
+            ssid   = `:string esp_wifi_evt.ssid`,
+            bssid  = `:string esp_wifi_evt.bssid`,
+            reason = `:number esp_wifi_evt.reason`,
+            time   = time,
+        ])
+        kind == `:number DRV_WIFI_GOT_IP` => emit(:wifi.got_ip [
+            ip      = `:string esp_wifi_evt.ip`,
+            netmask = `:string esp_wifi_evt.netmask`,
+            gateway = `:string esp_wifi_evt.gateway`,
+            changed = `:boolean esp_wifi_evt.changed`,
+            time    = time,
+        ])
+        kind == `:number DRV_WIFI_LOST_IP` => emit(:wifi.lost_ip [
+            time = time,
+        ])
+        kind == `:number DRV_WIFI_SCAN_DONE` => {
+            var aps = nil
+            `esp_wifi_scan_aps(esp_wifi_evt.scan_count, &$aps);`
+            emit(:wifi.scan [
+                aps  = aps,
+                time = time,
+            ])
+        }
+        kind == `:number DRV_WIFI_AP_CONNECTED` => emit(:wifi.ap.connected [
+            mac  = `:string esp_wifi_evt.bssid`,
+            aid  = `:number esp_wifi_evt.aid`,
+            time = time,
+        ])
+        kind == `:number DRV_WIFI_AP_DISCONNECTED` => emit(:wifi.ap.disconnected [
+            mac    = `:string esp_wifi_evt.bssid`,
+            aid    = `:number esp_wifi_evt.aid`,
+            reason = `:number esp_wifi_evt.reason`,
+            time   = time,
+        ])
+        kind == `:number DRV_WIFI_AP_STA_IP` => emit(:wifi.ap.sta_ip [
+            mac  = `:string esp_wifi_evt.bssid`,
+            ip   = `:string esp_wifi_evt.ip`,
+            time = time,
+        ])
+    }
+}
