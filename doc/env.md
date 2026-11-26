@@ -112,6 +112,11 @@ Atmos tasks resume where they left off). Multiple wakeup sources
   flash wear and auto-clearing on cold boot.
 - On the original ESP32, `ext0`, `ext1`, and `isolate` require RTC GPIOs
   (`0, 2, 4, 12–15, 25–27, 32–39`).
+- `sleep.deep` and `sleep.light` enter sleep immediately without waiting for
+  peripherals to drain: any recent or same-reaction serial output (`print`,
+  including inside `:sleep.before`) or in-flight peripheral activity
+  (Wi-Fi/ESP-NOW, PWM, RMT) may be cut off. Keep `:sleep.before` handlers to
+  synchronous state or shutdown work (e.g. `sleep.rtc_put_*`, `wifi.stop()`).
 
 Manual board test programs are provided in `app/`: `app/sleep_deep.atm` and
 `app/sleep_light.atm`.

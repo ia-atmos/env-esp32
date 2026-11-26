@@ -576,7 +576,8 @@ Returns the current primary Wi-Fi radio channel (shared with ESP-NOW).
 The `sleep` module (`include "../env/sleep.atm"`) exposes ESP32 deep sleep, light sleep, wakeup/reset inspection, and RTC slow-memory retention storage.
 
 ### `sleep.deep`
-Enters deep sleep (CPU and main SRAM power off; waking reboots into `app_main`). Validates arguments first, emits `:sleep.before` globally, configures wakeup triggers + optional RTC pin isolation, flushes `stdout`, and powers down. Never returns on the board.
+Enters deep sleep (CPU and main SRAM power off; waking reboots into `app_main`). Validates arguments first, emits `:sleep.before` globally, configures wakeup triggers + optional RTC pin isolation, and powers down immediately. Never returns on the board.
+* **Note:** `sleep.deep` powers down immediately without draining peripherals—recent or same-reaction serial output (`print`, including inside `:sleep.before`) and in-flight I/O (Wi-Fi/ESP-NOW, PWM, RMT) may be cut off. Keep `:sleep.before` to synchronous state or shutdown work (e.g. `sleep.rtc_put_*`, `wifi.stop()`).
 * **Syntax:** `sleep.deep(duration)` or `sleep.deep(options)`
 * **Arguments:**
   * `duration`: positive Atmos clock duration (e.g. `30s`, `5min`) — shorthand for `[duration=...]`.
@@ -588,7 +589,8 @@ Enters deep sleep (CPU and main SRAM power off; waking reboots into `app_main`).
     * `force`: `boolean` (default `false`) — must be `true` to allow deep sleep with no wakeup source configured.
 
 ### `sleep.light`
-Enters light sleep (CPU pauses; SRAM and all Atmos tasks stay intact and resume on wake). Emits `:sleep.before`, sleeps until the first wakeup source fires, updates `clock.now`, emits `:sleep.wake`, and returns the wakeup table.
+Enters light sleep (CPU pauses; SRAM and all Atmos tasks stay intact and resume on wake). Emits `:sleep.before`, sleeps immediately until the first wakeup source fires, resynchronizes the Atmos clock, emits `:sleep.wake`, and returns the wakeup table.
+* **Note:** `sleep.light` gates peripheral clocks immediately without draining hardware FIFOs—recent or same-reaction serial output (`print`, including inside `:sleep.before`) and in-flight peripheral activity may be cut off.
 * **Syntax:** `sleep.light(duration)` or `sleep.light(options)`
 * **Arguments:**
   * `duration` or `options` table with `duration`, `ext0`, `ext1`, and/or `gpio` (`[pin=int, level=0|1]` or list `[[pin=..., level=...], ...]`, supporting any valid digital GPIO).
@@ -800,6 +802,7 @@ loop {
 
 * **`:sleep.before`** — Broadcast globally (`emit @:global`) immediately before entering deep or light sleep (after validating options):
   `[mode="deep"|"light", duration=number|nil, time=integer]`
+  *(Runs synchronously in the same reaction as the sleep call—use it for state persistence or peripheral shutdown, not serial `print`.)*
 * **`:sleep.wake`** — Broadcast globally immediately after returning from `sleep.light`:
   `[cause=string, causes=[string, ...], pins=[int, ...], slept=number, time=integer]`
 
