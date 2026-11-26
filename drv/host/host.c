@@ -745,6 +745,9 @@ int64_t drv_clock_now (void) {
 void drv_clock_wake (void) {
 }
 
+void drv_clock_sync (void) {
+}
+
 static void sleep_us (int64_t us) {
     if (us <= 0 || getenv("ESP32_HOST_REALTIME") == NULL) {
         return;

@@ -93,6 +93,10 @@ int64_t drv_clock_wait (int64_t max_us);
 // queue an event (also from an interrupt).
 void drv_clock_wake (void);
 
+// Resynchronizes the clock wait baseline to "now" (called after light sleep
+// so time spent sleeping does not prematurely expire subsequent timers).
+void drv_clock_sync (void);
+
 ///////////////////////////////////////////////////////////////////////////////
 // GPIO
 ///////////////////////////////////////////////////////////////////////////////

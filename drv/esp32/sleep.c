@@ -3,7 +3,6 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <string.h>
 
 #include "driver/gpio.h"
@@ -13,8 +12,6 @@
 #include "esp_sleep.h"
 #include "esp_system.h"
 #include "esp_timer.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 
 #include "drv.h"
 
@@ -232,8 +229,6 @@ const char* drv_sleep_deep (const drv_sleep_cfg_t* cfg) {
     for (int i = 0; i < cfg->isolate_n; i++) {
         (void) rtc_gpio_isolate((gpio_num_t) cfg->isolate[i]);
     }
-    fflush(stdout);
-    vTaskDelay(pdMS_TO_TICKS(10));
     esp_deep_sleep_start();
     return NULL;
 }
@@ -269,10 +264,10 @@ const char* drv_sleep_light (const drv_sleep_cfg_t* cfg, drv_sleep_wake_t* wake)
         }
     }
 
-    fflush(stdout);
     int64_t t0 = esp_timer_get_time();
     esp_err_t err = esp_light_sleep_start();
     int64_t slept = esp_timer_get_time() - t0;
+    drv_clock_sync();
 
     for (int i = 0; i < cfg->gpio_n; i++) {
         (void) gpio_wakeup_disable((gpio_num_t) cfg->gpio[i].pin);

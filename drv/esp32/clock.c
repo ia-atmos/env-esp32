@@ -45,6 +45,10 @@ void IRAM_ATTR drv_clock_wake (void) {
 // between two waits passes too, and is discounted from the next wait.
 static int64_t s_last = -1;
 
+void drv_clock_sync (void) {
+    s_last = esp_timer_get_time();
+}
+
 int64_t drv_clock_wait (int64_t max_us) {
     int64_t t0 = esp_timer_get_time();
     if (s_last < 0) {
