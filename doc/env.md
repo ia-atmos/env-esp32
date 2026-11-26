@@ -31,7 +31,7 @@ $ cd esp32 && idf.py build flash monitor    # the board (ESP-IDF v6)
 | Environment | `env/esp32.atm` | the one environment of the board: the clock and the events of all drivers |
 | Modules | `env/<module>.atm` | functions in Atmos; native literals call the drivers |
 | Drivers | `drv/drv.h` | plain C, no Lua and no Atmos; a failure is a message |
-| Board | `drv/esp32/*.c`, `esp32/` | ESP-IDF: GPIO, LEDC, ADC, RMT, ESP-NOW, NVS |
+| Board | `drv/esp32/*.c`, `esp32/` | ESP-IDF: GPIO, LEDC, ADC, RMT, ESP-NOW, Wi-Fi, NVS |
 | Host | `drv/host/host.c`, `Makefile` | a simulation with a virtual clock and scripted input |
 
 There is one environment. Its step waits until the nearest timer of the
@@ -40,7 +40,7 @@ passed; then it emits the events that the drivers queued, in the order
 they happened, whatever driver queued them (each driver adds a source in
 `drv/src.c`, and the oldest event of all goes first). On the board the
 wait blocks on a semaphore that the interrupts give, so the CPU idles
-between events. A module with events (`gpio`, `ir`, `espnow`) registers
+between events. A module with events (`gpio`, `ir`, `espnow`, `wifi`) registers
 in `esp32.drain` the function that emits the oldest event of its driver.
 
 For `app/init.atm` (`gpio`, `ir`, `debug`, no `espnow`), the image is
@@ -55,6 +55,7 @@ links the Wi-Fi stack, and its image is about 980 KB.
 | `gpio` | `setup`/`mode`, `read`, `write`, `watch`, `unwatch`, `read_adc`, `setup_pwm`, `attach_pwm`, `detach_pwm`, `stop_pwm`, `write_pwm`, `fade_pwm` | `:gpio [pin,value,edge,time]`, `:gpio.pwm_fade [channel,time]` |
 | `ir` | `start(pin [,options])`, `stop`, `stats` | `:ir [protocol,address,command,raw,bits,repeat,time]` |
 | `espnow` | `init`, `add_peer`, `send`, `get_mac`, `get_channel`, `set_channel` | `:espnow.recv [mac,data,time]`, `:espnow.send [mac,status,time]` |
+| `wifi` | `connect(ssid [,password [,options]])`, `disconnect`, `stop`, `scan([options])`, `start_ap(ssid [,password [,options]])`, `stop_ap`, `status`, `info`, `get_mac`, `get_channel` | `:wifi.connected [ssid,bssid,channel,time]`, `:wifi.disconnected [ssid,bssid,reason,time]`, `:wifi.got_ip [ip,netmask,gateway,changed,time]`, `:wifi.lost_ip [time]`, `:wifi.scan [aps,time]`, `:wifi.ap.connected [mac,aid,time]`, `:wifi.ap.disconnected [mac,aid,reason,time]`, `:wifi.ap.sta_ip [mac,ip,time]` |
 | `preferences` | `open`/`begin`, `close`, `commit`, `put_int`, `get_int`, `put_bool`, `get_bool`, `put_string`, `get_string`, `is_key`, `remove`, `clear` | |
 | `debug` | `meminfo`, tasks `Mem` and `Fps` | |
 
@@ -62,6 +63,35 @@ The arguments and the results are those of [api.md](api.md). An invalid
 argument, or a failure of ESP-IDF, raises an error with a message such
 as `gpio.write : GPIO pin 34 cannot be used as output`, which `catch`
 takes.
+
+### Wi-Fi (`env/wifi.atm`) and ESP-NOW coexistence
+
+`wifi` is non-blocking: `wifi.connect`, `wifi.scan`, and `wifi.start_ap`
+return immediately and report state transitions through `:wifi.*` events
+(and `:wifi.ap.*` for SoftAP clients, which are subtags of both `:wifi.ap`
+and `:wifi`). Reconnection policy is left to the Atmos program (e.g., a
+`loop` around `watching :wifi.disconnected { ... }` with a backoff timer).
+
+`wifi` and `espnow` share the ESP32 Wi-Fi radio and can be included together:
+
+- Both initialize `esp_netif`, the default event loop, and `esp_wifi`
+  idempotently in whichever order they are started.
+- Starting SoftAP (`wifi.start_ap`) while STA or ESP-NOW is active switches
+  the radio to `WIFI_MODE_APSTA`; `wifi.stop_ap` drops back to
+  `WIFI_MODE_STA` without interrupting STA or ESP-NOW.
+- While STA is associated to an AP, the AP dictates the radio channel, so
+  ESP-NOW peers must operate on that same channel (`wifi.get_channel()`,
+  which reports the same physical radio channel as `espnow.get_channel()`).
+  Pass `[power_save="none"]` to `wifi.connect` if you want low-latency
+  ESP-NOW reception while connected to an AP.
+- `wifi.stop()` powers down the shared Wi-Fi radio for both Wi-Fi and
+  ESP-NOW.
+- Programs that do not include `env/wifi.atm` or `env/espnow.atm` do not
+  link the Wi-Fi stack.
+
+Manual board test programs are provided in `app/`:
+`app/wifi_scan.atm`, `app/wifi_sta.atm`, `app/wifi_ap.atm`, and
+`app/wifi_espnow.atm`.
 
 ## Differences from the Lua version
 
@@ -127,6 +157,14 @@ line per input:
 100   pin 4 1                               # a pin goes to a level
 2500  ir nec 0x00 0x45 [repeat]             # an IR frame
 300   espnow 24:0a:c4:05:06:07 PING         # an ESP-NOW message
+0     wifi ap_add LabNet aa:bb:cc:dd:ee:01 -45 6 wpa2   # visible AP for scan
+250   wifi connected LabNet aa:bb:cc:dd:ee:01 6         # STA associated
+300   wifi got_ip 192.168.1.42 255.255.255.0 192.168.1.1 [changed]
+400   wifi lost_ip                                      # STA lost IP
+450   wifi disconnected 8 [LabNet aa:bb:cc:dd:ee:01]    # STA disconnected
+500   wifi ap_connected de:ad:be:ef:00:01 1             # client joined SoftAP
+520   wifi ap_sta_ip de:ad:be:ef:00:01 192.168.4.2      # SoftAP client got IP
+600   wifi ap_disconnected de:ad:be:ef:00:01 1 8        # client left SoftAP
 21000 quit                                  # nothing more happens
 ```
 

@@ -47,12 +47,24 @@ local clock, gpio, espnow, ir = esp32.clock, esp32.gpio, esp32.espnow, esp32.ir
   * [`preferences.remove`](#preferencesremove)
   * [`preferences.clear`](#preferencesclear)
   * [`preferences.close`](#preferencesclose)
-* **[6. Atmos Hardware Events](#6-atmos-hardware-events)**
+* **[6. wifi (C environment)](#6-wifi-c-environment)**
+  * [`wifi.connect`](#wificonnect)
+  * [`wifi.disconnect`](#wifidisconnect)
+  * [`wifi.stop`](#wifistop)
+  * [`wifi.scan`](#wifiscan)
+  * [`wifi.start_ap`](#wifistart_ap)
+  * [`wifi.stop_ap`](#wifistop_ap)
+  * [`wifi.status`](#wifistatus)
+  * [`wifi.info`](#wifiinfo)
+  * [`wifi.get_mac`](#wifiget_mac)
+  * [`wifi.get_channel`](#wifiget_channel)
+* **[7. Atmos Hardware Events](#7-atmos-hardware-events)**
   * [`gpio` Event](#gpio-event)
   * [`gpio.pwm_fade` Event](#gpiopwm_fade-event)
   * [`espnow.recv` Event](#espnowrecv-event)
   * [`espnow.send` Event](#espnowsend-event)
   * [`ir` Event](#ir-event)
+  * [`wifi` Events](#wifi-events)
 
 ---
 
@@ -470,7 +482,88 @@ prefs.close()
 
 ---
 
-## 6. Atmos Hardware Events
+## 6. `wifi` (C environment)
+
+The `wifi` module (`include "../env/wifi.atm"`) provides non-blocking Wi-Fi Station (STA), SoftAP, and asynchronous AP scanning over ESP-IDF. It can coexist with `espnow` on the shared Wi-Fi radio (see [doc/env.md](env.md)).
+
+### `wifi.connect`
+Lazily initializes Wi-Fi in STA mode (or `APSTA` if SoftAP is active) and initiates an asynchronous connection to an access point.
+* **Syntax:** `wifi.connect(ssid [, password [, options]])`
+* **Arguments:**
+  * `ssid`: `string` (1 to 32 characters).
+  * `password`: `string` or `nil` (up to 64 characters; `nil` or `""` connects to an open network).
+  * `options`: optional table with any of:
+    * `bssid`: `string` (`"aa:bb:cc:dd:ee:ff"`) to lock to a specific AP MAC.
+    * `channel`: `integer` (`1` to `14`).
+    * `hostname`: `string` DHCP hostname.
+    * `power_save`: `string` (`"none"`, `"min"`, or `"max"`).
+* **Cross Reference:** Emits **[`:wifi.connected`](#wifi-events)** and **[`:wifi.got_ip`](#wifi-events)** on success, or **[`:wifi.disconnected`](#wifi-events)** on failure/drop.
+
+### `wifi.disconnect`
+Disconnects the station from the current AP while keeping the Wi-Fi driver initialized. Emits `:wifi.disconnected`.
+* **Syntax:** `wifi.disconnect()`
+
+### `wifi.stop`
+Stops the Wi-Fi driver and powers down the radio (stops STA, SoftAP, any in-progress scan, and ESP-NOW if active).
+* **Syntax:** `wifi.stop()`
+
+### `wifi.scan`
+Starts a non-blocking scan for nearby Wi-Fi access points. Lazily starts Wi-Fi in STA (or APSTA) mode if stopped. Raises an error if a scan is already in progress.
+* **Syntax:** `wifi.scan([options])`
+* **Arguments:**
+  * `options`: optional table with any of:
+    * `ssid`: `string` to filter for a specific SSID.
+    * `channel`: `integer` (`1` to `14`, `0` or omitted for all channels).
+    * `show_hidden`: `boolean` (default `false`).
+    * `max`: `integer` maximum APs to return (default `20`, capped at `32`, sorted by strongest RSSI).
+* **Cross Reference:** Emits **[`:wifi.scan`](#wifi-events)** when scanning completes.
+
+### `wifi.start_ap`
+Starts a SoftAP access point (default gateway IP `192.168.4.1`). If STA or ESP-NOW is already active, switches automatically to `APSTA` mode so both remain active.
+* **Syntax:** `wifi.start_ap(ssid [, password [, options]])`
+* **Arguments:**
+  * `ssid`: `string` (1 to 32 characters).
+  * `password`: `string` or `nil` (8 to 64 characters for WPA2-PSK; `nil` or `""` for an open AP).
+  * `options`: optional table with any of:
+    * `channel`: `integer` (`1` to `13`, default `1`).
+    * `max_conn`: `integer` (`1` to `10`, default `4`).
+    * `hidden`: `boolean` (default `false`).
+* **Cross Reference:** Emits **[`:wifi.ap.connected`](#wifi-events)**, **[`:wifi.ap.sta_ip`](#wifi-events)**, and **[`:wifi.ap.disconnected`](#wifi-events)** as clients join and leave.
+
+### `wifi.stop_ap`
+Stops the SoftAP interface. If STA or ESP-NOW is active, switches back to STA mode without disconnecting it; otherwise stops the Wi-Fi radio.
+* **Syntax:** `wifi.stop_ap()`
+
+### `wifi.status`
+Returns the current STA connection state string.
+* **Syntax:** `wifi.status()`
+* **Returns:** `"stopped" | "disconnected" | "connecting" | "connected" | "got_ip"`.
+
+### `wifi.info`
+Returns a snapshot table of the current Wi-Fi STA and SoftAP state.
+* **Syntax:** `wifi.info()`
+* **Returns:** Table with:
+  * `state`: same string as `wifi.status()`.
+  * `ap_active`: `boolean`.
+  * `mac`, `ap_mac`: local STA and SoftAP MAC address strings.
+  * `ssid`, `bssid`, `rssi`: present while STA is connected (`nil` otherwise).
+  * `channel`: active radio channel while STA or SoftAP is active (`nil` when stopped).
+  * `ip`, `netmask`, `gateway`: present while STA has an IPv4 address (`nil` otherwise).
+  * `ap_ssid`, `ap_ip`: present while SoftAP is active (`nil` otherwise).
+
+### `wifi.get_mac`
+Returns the local STA MAC address.
+* **Syntax:** `wifi.get_mac()`
+* **Returns:** `string` (e.g. `"24:0a:c4:05:06:07"`).
+
+### `wifi.get_channel`
+Returns the current primary Wi-Fi radio channel (shared with ESP-NOW).
+* **Syntax:** `wifi.get_channel()`
+* **Returns:** `integer` (`1` to `14`). Raises an error if Wi-Fi has not been initialized yet.
+
+---
+
+## 7. Atmos Hardware Events
 
 Secondary environments process physical interrupts and emit them as Atmos events. You can capture them in tasks using the `await()` pattern.
 
@@ -609,3 +702,41 @@ raw value, bit count, and repeat status:
   queue overflow increments `ir.stats().dropped`.
 * `raw` is a hexadecimal string, rather than an integer, to preserve the value
   in the firmware's 32-bit Lua configuration.
+
+---
+
+### `wifi` Events
+
+All Wi-Fi events are hierarchical subtags of `:wifi`, and SoftAP client events are subtags of `:wifi.ap`:
+
+* **`:wifi.connected`** — STA associated with AP:
+  `[ssid=string, bssid=string, channel=integer, time=integer]`
+* **`:wifi.disconnected`** — STA disconnected or connection failed:
+  `[ssid=string, bssid=string, reason=integer, time=integer]`
+* **`:wifi.got_ip`** — STA obtained IPv4 address:
+  `[ip=string, netmask=string, gateway=string, changed=boolean, time=integer]`
+* **`:wifi.lost_ip`** — STA lost IPv4 lease:
+  `[time=integer]`
+* **`:wifi.scan`** — Async AP scan completed:
+  `[aps=[[ssid, bssid, rssi, channel, auth], ...], time=integer]`
+  where `auth` is `"open"`, `"wep"`, `"wpa"`, `"wpa2"`, `"wpa_wpa2"`, `"enterprise"`, `"wpa3"`, `"wpa2_wpa3"`, `"wapi"`, `"owe"`, or `"unknown"`.
+* **`:wifi.ap.connected`** — Client joined SoftAP:
+  `[mac=string, aid=integer, time=integer]`
+* **`:wifi.ap.sta_ip`** — SoftAP DHCP server assigned an IP to a client:
+  `[mac=string, ip=string, time=integer]`
+* **`:wifi.ap.disconnected`** — Client left SoftAP:
+  `[mac=string, aid=integer, reason=integer, time=integer]`
+
+```atmos
+include "../env/wifi.atm"
+
+loop {
+    wifi.connect("MySSID", "secret")
+    watching :wifi.disconnected {
+        val ip = await :wifi.got_ip
+        print("Online at", ip.ip)
+        await(false)
+    }
+    await(5s)
+}
+```
