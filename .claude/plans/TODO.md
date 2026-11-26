@@ -66,6 +66,11 @@ steps of an item are letters (`#3a`). From another session an item is
 
 ## Decided by the author
 
+- 2026-11-26 (relayed by `atmos`, for every project): in each report, for
+  each group of changes, one pair of short Atmos excerpts from that work,
+  with file and line: one idiomatic, one bad (awkward, verbose, a
+  workaround). Screenshots only for projects with a screen (not this one).
+
 - 2026-11-20: "Ok para todos. Vá em frente até onde conseguir": #16
   (#16a, one environment), #19, #4, #5, with the recommendations.
 - **#3** 2026-11-19: "#3 instale aqui". ESP-IDF v6.1.1 in `/opt/esp`
