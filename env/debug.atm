@@ -24,12 +24,20 @@ func debug.meminfo () {
     ]
 }
 
+;; Steps of the clock per second: with ESP32_FPS, the clock never blocks
+;; and each step emits :fps; otherwise, the steps that move the time.
 task debug.Fps () {
     loop {
         var n = 0
         watching 1s {
-            loop on :fps {
-                set n = n + 1
+            if esp32.fps {
+                loop on :fps {
+                    set n = n + 1
+                }
+            } else {
+                loop on :clock {
+                    set n = n + 1
+                }
             }
         }
         print("FPS:", n)

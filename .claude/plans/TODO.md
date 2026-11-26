@@ -33,6 +33,7 @@ steps of an item are letters (`#3a`). From another session an item is
 | #21 | `atmos-float` branch `float` (32-bit integers, time in ms) | work | closed 2026-11-23: merged into lang (d19d40f) and adopted here (#23) |
 | #22 | Soft-float cost on a board with no FPU (esp32c3), asked by atmos-float (#7 there) | work | done 2026-11-20: soft-float arithmetic in ROM (0 B flash), libm 15.2 KB vs 10.9 KB on the ESP32; sent |
 | #23 | lang renames the numeric options (A_TIME_US to A_CLOCK_US, ATM_* macros, ATMOS_REAL/INT/TIME to ATMOS_FLOAT/INTEGER/CLOCK) | work | done 2026-11-20 on master, working with both: tested against lang 55b1fee and branch float e415507, host and board; nothing to merge later |
+| #24 | Pedro pushed to our `master` (e07e49d, de3ecb9, 2026-11-25): `ESP32_FPS` (clock never blocks, emits `:fps`) and a clock that counts the time between waits; `debug.Fps` then counted only `:fps`, so `init` failed on the host | remark | fixed: `debug.Fps` counts `:fps` with the flag, `:clock` without; tests and board builds pass. Question for the author: Pedro now pushes here, which changes #4 |
 | #20 | To `atmos-lang`: `nanosleep` in `rt/main.c`, `$x = ...` in the manual, warnings of the generated C | defect | fixed in lang (`ee17162`, `dc94c6f`, `7b0bf06`); `ext/lang` at `826e219`, built with `ATM_NO_CLOCK` |
 
 ## Open items
