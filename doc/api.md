@@ -58,13 +58,21 @@ local clock, gpio, espnow, ir = esp32.clock, esp32.gpio, esp32.espnow, esp32.ir
   * [`wifi.info`](#wifiinfo)
   * [`wifi.get_mac`](#wifiget_mac)
   * [`wifi.get_channel`](#wifiget_channel)
-* **[7. Atmos Hardware Events](#7-atmos-hardware-events)**
+* **[7. sleep (C environment)](#7-sleep-c-environment)**
+  * [`sleep.deep`](#sleepdeep)
+  * [`sleep.light`](#sleeplight)
+  * [`sleep.cause` / `sleep.causes`](#sleepcause--sleepcauses)
+  * [`sleep.wakeup_pins`](#sleepwakeup_pins)
+  * [`sleep.reset_reason`](#sleepreset_reason)
+  * [`sleep.rtc_*`](#sleeprtc_)
+* **[8. Atmos Hardware Events](#8-atmos-hardware-events)**
   * [`gpio` Event](#gpio-event)
   * [`gpio.pwm_fade` Event](#gpiopwm_fade-event)
   * [`espnow.recv` Event](#espnowrecv-event)
   * [`espnow.send` Event](#espnowsend-event)
   * [`ir` Event](#ir-event)
   * [`wifi` Events](#wifi-events)
+  * [`sleep` Events](#sleep-events)
 
 ---
 
@@ -563,7 +571,52 @@ Returns the current primary Wi-Fi radio channel (shared with ESP-NOW).
 
 ---
 
-## 7. Atmos Hardware Events
+## 7. `sleep` (C environment)
+
+The `sleep` module (`include "../env/sleep.atm"`) exposes ESP32 deep sleep, light sleep, wakeup/reset inspection, and RTC slow-memory retention storage.
+
+### `sleep.deep`
+Enters deep sleep (CPU and main SRAM power off; waking reboots into `app_main`). Validates arguments first, emits `:sleep.before` globally, configures wakeup triggers + optional RTC pin isolation, flushes `stdout`, and powers down. Never returns on the board.
+* **Syntax:** `sleep.deep(duration)` or `sleep.deep(options)`
+* **Arguments:**
+  * `duration`: positive Atmos clock duration (e.g. `30s`, `5min`) — shorthand for `[duration=...]`.
+  * `options`: table combining any wakeup sources (acted on as hardware `par_or`):
+    * `duration`: positive Atmos clock duration for RTC timer wakeup.
+    * `ext0`: `[pin=int, level=0|1, pull="none"|"up"|"down"]` — single RTC GPIO wakeup (`0, 2, 4, 12–15, 25–27, 32–39` on ESP32).
+    * `ext1`: `[pins=[int, ...], mode="any_high"|"all_low"]` — multi-pin RTC GPIO wakeup (`any_high` = OR across pins; `all_low` = AND across pins on ESP32).
+    * `isolate`: `[int, ...]` — RTC GPIOs to pass to `rtc_gpio_isolate()` before sleeping to reduce leakage current.
+    * `force`: `boolean` (default `false`) — must be `true` to allow deep sleep with no wakeup source configured.
+
+### `sleep.light`
+Enters light sleep (CPU pauses; SRAM and all Atmos tasks stay intact and resume on wake). Emits `:sleep.before`, sleeps until the first wakeup source fires, updates `clock.now`, emits `:sleep.wake`, and returns the wakeup table.
+* **Syntax:** `sleep.light(duration)` or `sleep.light(options)`
+* **Arguments:**
+  * `duration` or `options` table with `duration`, `ext0`, `ext1`, and/or `gpio` (`[pin=int, level=0|1]` or list `[[pin=..., level=...], ...]`, supporting any valid digital GPIO).
+* **Returns:** `[cause=string, causes=[string, ...], pins=[int, ...], slept=number]`.
+
+### `sleep.cause` / `sleep.causes`
+Returns the wakeup cause(s) from the most recent deep or light sleep.
+* **Syntax:** `sleep.cause()` -> `string` (`"none"`, `"timer"`, `"ext0"`, `"ext1"`, `"gpio"`, `"touch"`, `"ulp"`, `"uart"`, `"wifi"`, `"bt"`, `"other"`).
+* **Syntax:** `sleep.causes()` -> vector of all active wakeup cause strings.
+
+### `sleep.wakeup_pins`
+Returns a vector of GPIO pin numbers that triggered an `ext1` wakeup (`[]` otherwise).
+* **Syntax:** `sleep.wakeup_pins()`
+
+### `sleep.reset_reason`
+Returns the chip reset reason at boot (`"poweron"`, `"ext"`, `"sw"`, `"panic"`, `"int_wdt"`, `"task_wdt"`, `"wdt"`, `"deepsleep"`, `"brownout"`, `"sdio"`, `"usb"`, `"jtag"`, `"efuse"`, `"pwr_glitch"`, `"cpu_lockup"`, `"unknown"`).
+* **Syntax:** `sleep.reset_reason()`
+
+### `sleep.rtc_*`
+Checksummed key-value storage in `RTC_DATA_ATTR` slow SRAM (up to 32 keys, key length 1–15 chars, strings up to 63 bytes). Survives deep sleep with zero flash wear and automatically clears on cold boot/power loss:
+* `sleep.rtc_put_int(key, value)` / `sleep.rtc_get_int(key [, default])`
+* `sleep.rtc_put_bool(key, value)` / `sleep.rtc_get_bool(key [, default])`
+* `sleep.rtc_put_string(key, value)` / `sleep.rtc_get_string(key [, default])`
+* `sleep.rtc_is_key(key)` / `sleep.rtc_remove(key)` / `sleep.rtc_clear()`
+
+---
+
+## 8. Atmos Hardware Events
 
 Secondary environments process physical interrupts and emit them as Atmos events. You can capture them in tasks using the `await()` pattern.
 
@@ -739,4 +792,27 @@ loop {
     }
     await(5s)
 }
+```
+
+---
+
+### `sleep` Events
+
+* **`:sleep.before`** — Broadcast globally (`emit @:global`) immediately before entering deep or light sleep (after validating options):
+  `[mode="deep"|"light", duration=number|nil, time=integer]`
+* **`:sleep.wake`** — Broadcast globally immediately after returning from `sleep.light`:
+  `[cause=string, causes=[string, ...], pins=[int, ...], slept=number, time=integer]`
+
+```atmos
+include "../env/sleep.atm"
+
+spawn {
+    watching :sleep.before {
+        defer { sleep.rtc_put_int("clean", 1) }
+        await(false)
+    }
+}
+
+;; Wake after 30s OR when GPIO 0 (BOOT) is pressed LOW
+sleep.deep([duration=30s, ext0=[pin=0, level=0, pull="up"]])
 ```

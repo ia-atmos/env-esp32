@@ -6,7 +6,7 @@ on the ESP32. It holds two implementations:
 | | C (ia-atmos/lang) | Lua (reference) |
 |---|---|---|
 | State | replaces the Lua one; tested on the host, builds for the board, not yet run on it | runs on the board |
-| Programs | `app/init.atm`, `app/ultrat.atm`, `app/wifi_*.atm` | `atm/init.atm`, `atm/ultrat/` |
+| Programs | `app/init.atm`, `app/ultrat.atm`, `app/wifi_*.atm`, `app/sleep_*.atm` | `atm/init.atm`, `atm/ultrat/` |
 | Environment | `env/esp32.atm` and one module per driver, over `drv/` ([doc/env.md](doc/env.md)) | `lua/esp32/*.lua` over `main/*.c` ([doc/api.md](doc/api.md)) |
 | Build | `make test` (host), `cd esp32 && idf.py build` (board) | `idf.py build` at the root |
 

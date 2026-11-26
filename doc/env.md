@@ -31,7 +31,7 @@ $ cd esp32 && idf.py build flash monitor    # the board (ESP-IDF v6)
 | Environment | `env/esp32.atm` | the one environment of the board: the clock and the events of all drivers |
 | Modules | `env/<module>.atm` | functions in Atmos; native literals call the drivers |
 | Drivers | `drv/drv.h` | plain C, no Lua and no Atmos; a failure is a message |
-| Board | `drv/esp32/*.c`, `esp32/` | ESP-IDF: GPIO, LEDC, ADC, RMT, ESP-NOW, Wi-Fi, NVS |
+| Board | `drv/esp32/*.c`, `esp32/` | ESP-IDF: GPIO, LEDC, ADC, RMT, ESP-NOW, Wi-Fi, Sleep/RTC, NVS |
 | Host | `drv/host/host.c`, `Makefile` | a simulation with a virtual clock and scripted input |
 
 There is one environment. Its step waits until the nearest timer of the
@@ -57,6 +57,7 @@ links the Wi-Fi stack, and its image is about 980 KB.
 | `espnow` | `init`, `add_peer`, `send`, `get_mac`, `get_channel`, `set_channel` | `:espnow.recv [mac,data,time]`, `:espnow.send [mac,status,time]` |
 | `wifi` | `connect(ssid [,password [,options]])`, `disconnect`, `stop`, `scan([options])`, `start_ap(ssid [,password [,options]])`, `stop_ap`, `status`, `info`, `get_mac`, `get_channel` | `:wifi.connected [ssid,bssid,channel,time]`, `:wifi.disconnected [ssid,bssid,reason,time]`, `:wifi.got_ip [ip,netmask,gateway,changed,time]`, `:wifi.lost_ip [time]`, `:wifi.scan [aps,time]`, `:wifi.ap.connected [mac,aid,time]`, `:wifi.ap.disconnected [mac,aid,reason,time]`, `:wifi.ap.sta_ip [mac,ip,time]` |
 | `preferences` | `open`/`begin`, `close`, `commit`, `put_int`, `get_int`, `put_bool`, `get_bool`, `put_string`, `get_string`, `is_key`, `remove`, `clear` | |
+| `sleep` | `deep(duration\|options)`, `light(duration\|options)`, `cause`, `causes`, `wakeup_pins`, `reset_reason`, `rtc_put_int`/`rtc_get_int`, `rtc_put_bool`/`rtc_get_bool`, `rtc_put_string`/`rtc_get_string`, `rtc_is_key`, `rtc_remove`, `rtc_clear` | `:sleep.before [mode,duration,time]`, `:sleep.wake [cause,causes,pins,slept,time]` |
 | `debug` | `meminfo`, tasks `Mem` and `Fps` | |
 
 The arguments and the results are those of [api.md](api.md). An invalid
@@ -92,6 +93,28 @@ and `:wifi`). Reconnection policy is left to the Atmos program (e.g., a
 Manual board test programs are provided in `app/`:
 `app/wifi_scan.atm`, `app/wifi_sta.atm`, `app/wifi_ap.atm`, and
 `app/wifi_espnow.atm`.
+
+### Sleep (`env/sleep.atm`)
+
+`sleep` provides both **deep sleep** (CPU and SRAM power off; wakes by
+rebooting from `app_main`) and **light sleep** (CPU pauses; RAM and all
+Atmos tasks resume where they left off). Multiple wakeup sources
+(`duration`, `ext0`, `ext1`, and `gpio` for light sleep) act as a hardware
+`par_or`—whichever trigger fires first wakes the chip:
+
+- Durations use Atmos clock literals (e.g. `sleep.deep(30s)`,
+  `sleep.light(500ms)`) and scale automatically with `A_CLOCK_US`.
+- Both `sleep.deep` and `sleep.light` validate all options first, then
+  broadcast `:sleep.before` globally (`emit @:global`) so concurrent tasks
+  can flush state or run `defer` cleanup before sleeping.
+- `sleep.rtc_*` stores up to 32 keys (int, bool, or strings up to 63 bytes)
+  in checksummed `RTC_DATA_ATTR` slow SRAM—surviving deep sleep with zero
+  flash wear and auto-clearing on cold boot.
+- On the original ESP32, `ext0`, `ext1`, and `isolate` require RTC GPIOs
+  (`0, 2, 4, 12–15, 25–27, 32–39`).
+
+Manual board test programs are provided in `app/`: `app/sleep_deep.atm` and
+`app/sleep_light.atm`.
 
 ## Differences from the Lua version
 
@@ -165,6 +188,10 @@ line per input:
 500   wifi ap_connected de:ad:be:ef:00:01 1             # client joined SoftAP
 520   wifi ap_sta_ip de:ad:be:ef:00:01 192.168.4.2      # SoftAP client got IP
 600   wifi ap_disconnected de:ad:be:ef:00:01 1 8        # client left SoftAP
+0     sleep reset deepsleep                             # boot reset reason
+0     sleep cause ext1                                  # boot wakeup cause
+0     sleep wakeup_pin 32                               # ext1 wakeup pin
+0     sleep rtc_int boots 4                             # pre-populated RTC key
 21000 quit                                  # nothing more happens
 ```
 
