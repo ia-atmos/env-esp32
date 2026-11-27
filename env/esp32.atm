@@ -19,7 +19,9 @@
 ;; The modules call the drivers of drv/drv.h: those of the board
 ;; (drv/esp32/) or those simulated on the host (drv/host/). A module with
 ;; events registers in `esp32.drain` the function that emits the oldest
-;; event of its driver.
+;; event of its driver. A module with a radio (`wifi`, `espnow`) registers
+;; in `esp32.radios` the function that stops it, which `sleep` calls
+;; before sleeping (the radios do not survive a sleep).
 
 ```:prelude
 #include "drv.h"
@@ -82,7 +84,8 @@ static int64_t esp_clock_step (AVal nxt) {
 val clock = [now=0]
 
 ;; drain@<source of drv.h>: emits the oldest event of that driver
-val esp32 = [drain=[], fps=`:boolean ESP_FPS`]
+;; radios.<module>: stops the radio of that module (env/sleep.atm)
+val esp32 = [drain=[], radios=[], fps=`:boolean ESP_FPS`]
 
 atmos.env([
     mode = [primary=true],

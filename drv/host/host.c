@@ -16,6 +16,7 @@
 //                  with no frame before it counts as invalid)
 //      <ms> espnow <mac> <data>                    a message arrives
 //      <ms> wifi ap_add <ssid> <bssid> <rssi> <ch> <auth>   a visible AP
+//      <ms> wifi scan_fail                         the scan in progress fails
 //      <ms> wifi connected <ssid> <bssid> <ch>     STA associated
 //      <ms> wifi got_ip <ip> <mask> <gw> [changed] STA obtained IP
 //      <ms> wifi disconnected <reason> [ssid] [bssid]
@@ -40,6 +41,9 @@
 // printed as `[drv <ms>] ...`.
 //
 // A send of ESP-NOW succeeds at once; the preferences live in memory.
+//
+// Wi-Fi and ESP-NOW share the radio, as on the board: it turns off
+// (traced as `radio off`) only when neither uses it.
 //
 // The validation follows the ESP32 (the original): pins 0-39, of which
 // 34-39 are input only, 8 PWM channels, resolutions of 1-20 bits.
@@ -191,7 +195,8 @@ static const char* bad_channel (const char* fn, int ch) {
 // PENDING: what happens at a future time
 ///////////////////////////////////////////////////////////////////////////////
 
-typedef enum { P_FADE, P_PIN, P_IR, P_ESPNOW, P_WIFI, P_WIFI_SCAN, P_QUIT } pending_kind_t;
+typedef enum { P_FADE, P_PIN, P_IR, P_ESPNOW, P_WIFI, P_WIFI_SCAN, P_WIFI_SCAN_FAIL,
+               P_QUIT } pending_kind_t;
 
 typedef struct {
     int64_t at;
@@ -281,6 +286,14 @@ static int  CHANNEL = 1;            // shared radio channel (Wi-Fi + ESP-NOW)
 static drv_wifi_evt_t Q_WIFI[WIFI_QUEUE_LEN];
 static int Q_WIFI_HEAD = 0, Q_WIFI_N = 0;
 
+static bool RADIO_ON = false;      // the Wi-Fi radio, shared with ESP-NOW
+
+// The SoftAP clients that the program saw connect, as on the board: a
+// stop disconnects them (drv/esp32/wifi.c).
+#define AP_CLIENTS_MAX 10
+static struct { char mac[18]; int aid; } AP_CLIENTS[AP_CLIENTS_MAX];
+static int AP_CLIENTS_N = 0;
+
 static drv_wifi_ap_t HOST_APS[DRV_WIFI_SCAN_MAX];
 static int           HOST_APS_N = 0;
 static drv_wifi_ap_t SCAN_APS[DRV_WIFI_SCAN_MAX];
@@ -341,6 +354,26 @@ static void wifi_q_put (drv_wifi_evt_t e) {
     }
 }
 
+static void ap_clients_remove (const char* mac) {
+    for (int i = 0; i < AP_CLIENTS_N; i++) {
+        if (!strcasecmp(AP_CLIENTS[i].mac, mac)) {
+            AP_CLIENTS[i] = AP_CLIENTS[--AP_CLIENTS_N];
+            return;
+        }
+    }
+}
+
+// A stop of the SoftAP: each client that the program saw disconnects.
+static void ap_clients_gone (void) {
+    for (int i = 0; i < AP_CLIENTS_N; i++) {
+        drv_wifi_evt_t e = { .kind = DRV_WIFI_AP_DISCONNECTED, .time_us = NOW,
+                             .aid = AP_CLIENTS[i].aid, .reason = 8 };
+        strcpy(e.bssid, AP_CLIENTS[i].mac);
+        wifi_q_put(e);
+    }
+    AP_CLIENTS_N = 0;
+}
+
 static void wifi_scan_finish (void) {
     if (!WIFI_SCANNING) {
         return;
@@ -373,7 +406,20 @@ static void wifi_scan_finish (void) {
         .kind = DRV_WIFI_SCAN_DONE,
         .time_us = NOW,
         .scan_count = SCAN_APS_N,
+        .scan_status = "success",
     };
+    wifi_q_put(e);
+}
+
+// A scan that does not finish: "stopped" (wifi.stop) or "fail" (script).
+static void wifi_scan_end (const char* status) {
+    if (!WIFI_SCANNING) {
+        return;
+    }
+    WIFI_SCANNING = false;
+    SCAN_APS_N = 0;
+    drv_wifi_evt_t e = { .kind = DRV_WIFI_SCAN_DONE, .time_us = NOW,
+                         .scan_count = 0, .scan_status = status };
     wifi_q_put(e);
 }
 
@@ -460,6 +506,27 @@ static void pending_fire (pending_t p) {
                     }
                     WIFI_IP[0] = WIFI_MASK[0] = WIFI_GW[0] = '\0';
                     break;
+                case DRV_WIFI_AP_CONNECTED:
+                    if (!WIFI_AP_ON) {
+                        return;         // no SoftAP: as the board, dropped
+                    }
+                    if (AP_CLIENTS_N < AP_CLIENTS_MAX) {
+                        strcpy(AP_CLIENTS[AP_CLIENTS_N].mac, p.wifi.bssid);
+                        AP_CLIENTS[AP_CLIENTS_N].aid = p.wifi.aid;
+                        AP_CLIENTS_N++;
+                    }
+                    break;
+                case DRV_WIFI_AP_DISCONNECTED:
+                    if (!WIFI_AP_ON) {
+                        return;         // the stop already disconnected it
+                    }
+                    ap_clients_remove(p.wifi.bssid);
+                    break;
+                case DRV_WIFI_AP_STA_IP:
+                    if (!WIFI_AP_ON) {
+                        return;
+                    }
+                    break;
                 default:
                     break;
             }
@@ -467,6 +534,9 @@ static void pending_fire (pending_t p) {
             break;
         case P_WIFI_SCAN:
             wifi_scan_finish();
+            break;
+        case P_WIFI_SCAN_FAIL:
+            wifi_scan_end("fail");
             break;
         case P_QUIT:
             QUIT = true;
@@ -601,6 +671,11 @@ static void script_read (void) {
                 a->rssi = rssi;
                 a->channel = ch;
                 a->auth = aname;
+                continue;
+            }
+            if (!strcmp(sub, "scan_fail")) {
+                p.kind = P_WIFI_SCAN_FAIL;
+                pending_add(p);
                 continue;
             }
             p.kind = P_WIFI;
@@ -1065,13 +1140,45 @@ static bool peek_espnow (int64_t* t) {
     return true;
 }
 
+static void radio_on (void) {
+    RADIO_ON = true;
+}
+
+// Turns the radio off if neither Wi-Fi nor ESP-NOW uses it anymore.
+static void radio_check (void) {
+    bool wifi = WIFI_STA_ON || WIFI_AP_ON || WIFI_SCANNING || WIFI_ST != WST_STOPPED;
+    if (RADIO_ON && !ESPNOW_ON && !wifi) {
+        RADIO_ON = false;
+        trace("radio off");
+    }
+}
+
 const char* drv_espnow_init (void) {
     if (!ESPNOW_ON) {
         drv_source_add(DRV_SRC_ESPNOW, peek_espnow);
         trace("espnow.init");
         ESPNOW_ON = true;
+        radio_on();
+        NPEERS = 0;
         strcpy(PEERS[NPEERS++], "ff:ff:ff:ff:ff:ff");
     }
+    return NULL;
+}
+
+const char* drv_espnow_stop (const char* reason) {
+    if (!ESPNOW_ON) {
+        return NULL;
+    }
+    trace("espnow.stop %s", reason);
+    ESPNOW_ON = false;
+    NPEERS = 0;
+    drv_espnow_evt_t e = { .kind=DRV_ESPNOW_STOP, .time_us=NOW, .reason=reason };
+    if (Q_NOW_N == ESPNOW_QUEUE_LEN) {      // as the board: the oldest gives place
+        Q_NOW_HEAD = (Q_NOW_HEAD + 1) % ESPNOW_QUEUE_LEN;
+        Q_NOW_N--;
+    }
+    Q_NOW[(Q_NOW_HEAD + Q_NOW_N++) % ESPNOW_QUEUE_LEN] = e;
+    radio_check();
     return NULL;
 }
 
@@ -1208,6 +1315,7 @@ const char* drv_wifi_connect (const char* ssid, const char* password,
         }
     }
     host_wifi_init();
+    radio_on();
     WIFI_STA_ON = true;
     WIFI_ST = WST_CONNECTING;
     strcpy(WIFI_SSID, ssid);
@@ -1233,6 +1341,16 @@ const char* drv_wifi_stop (void) {
     if (WIFI_ST != WST_STOPPED || WIFI_AP_ON) {
         trace("wifi.stop");
     }
+    // as the board: a scan in progress ends with no AP, each SoftAP client
+    // disconnects, and the STA that was connecting or connected disconnects
+    wifi_scan_end("stopped");
+    ap_clients_gone();
+    if (WIFI_ST == WST_CONNECTING || WIFI_ST == WST_CONNECTED || WIFI_ST == WST_GOT_IP) {
+        drv_wifi_evt_t e = { .kind = DRV_WIFI_DISCONNECTED, .time_us = NOW, .reason = 8 };
+        strcpy(e.ssid, WIFI_SSID);
+        strcpy(e.bssid, WIFI_BSSID);
+        wifi_q_put(e);
+    }
     WIFI_STA_ON = false;
     WIFI_AP_ON = false;
     WIFI_SCANNING = false;
@@ -1241,6 +1359,7 @@ const char* drv_wifi_stop (void) {
     WIFI_IP[0] = WIFI_MASK[0] = WIFI_GW[0] = '\0';
     WIFI_AP_SSID[0] = WIFI_AP_IP[0] = '\0';
     WIFI_CH = 0;
+    radio_check();
     return NULL;
 }
 
@@ -1267,6 +1386,7 @@ const char* drv_wifi_scan (const drv_wifi_scan_opts_t* opts) {
         }
     }
     host_wifi_init();
+    radio_on();
     if (WIFI_ST == WST_STOPPED) {
         WIFI_ST = WST_DISCONNECTED;
     }
@@ -1308,6 +1428,7 @@ const char* drv_wifi_start_ap (const char* ssid, const char* password,
         }
     }
     host_wifi_init();
+    radio_on();
     WIFI_AP_ON = true;
     strcpy(WIFI_AP_SSID, ssid);
     strcpy(WIFI_AP_IP, "192.168.4.1");
@@ -1326,6 +1447,7 @@ const char* drv_wifi_stop_ap (void) {
     if (!WIFI_AP_ON) {
         return NULL;
     }
+    ap_clients_gone();
     WIFI_AP_ON = false;
     WIFI_AP_SSID[0] = '\0';
     WIFI_AP_IP[0] = '\0';
@@ -1334,6 +1456,7 @@ const char* drv_wifi_stop_ap (void) {
         WIFI_ST = WST_STOPPED;
     }
     trace("wifi.stop_ap");
+    radio_check();
     return NULL;
 }
 

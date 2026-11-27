@@ -35,6 +35,7 @@ idf_component_register(
         "${REPO}/drv/esp32/gpio.c"
         "${REPO}/drv/esp32/ir.c"
         "${REPO}/drv/esp32/decoder.c"
+        "${REPO}/drv/esp32/radio.c"
         "${REPO}/drv/esp32/espnow.c"
         "${REPO}/drv/esp32/wifi.c"
         "${REPO}/drv/esp32/prefs.c"

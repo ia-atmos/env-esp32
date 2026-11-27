@@ -5,7 +5,10 @@
 ;;      :wifi.disconnected    [ssid, bssid, reason, time]
 ;;      :wifi.got_ip          [ip, netmask, gateway, changed, time]
 ;;      :wifi.lost_ip         [time]
-;;      :wifi.scan            [aps, time]
+;;      :wifi.scan            [aps, status, time]
+;;          status: "success" (aps: the list, maybe empty), "stopped"
+;;          (wifi.stop or sleep ended it) or "fail" (ESP-IDF failed it);
+;;          aps is nil unless "success"
 ;;      :wifi.ap.connected    [mac, aid, time]
 ;;      :wifi.ap.disconnected [mac, aid, reason, time]
 ;;      :wifi.ap.sta_ip       [mac, ip, time]
@@ -13,6 +16,13 @@
 ;; All events are subtags of `:wifi`, and the SoftAP events are subtags of
 ;; `:wifi.ap`. Can be used alongside `env/espnow.atm` (when connected to an
 ;; AP, the AP dictates the radio channel).
+;;
+;; `wifi.stop` ends STA, SoftAP and scan, and tells the program of each,
+;; once: `:wifi.scan [status="stopped"]` for a scan in progress, one
+;; `:wifi.ap.disconnected [reason=8]` for each SoftAP client (as
+;; `wifi.stop_ap` does), and `:wifi.disconnected [reason=8]` if STA was
+;; connecting or connected. It turns the radio off only if ESP-NOW does
+;; not use it. `sleep.deep` and `sleep.light` call it.
 
 include "esp32.atm"
 
@@ -165,6 +175,10 @@ func wifi.stop () {
     `st = esp_chk(drv_wifi_stop());`
 }
 
+set esp32.radios.wifi = func () {
+    wifi.stop()
+}
+
 ;; options: [ssid="...", channel=0, show_hidden=false, max=20]
 func wifi.scan (options) {
     val ssid        = if options => options.ssid        => nil
@@ -235,11 +249,15 @@ set esp32.drain@(`:number DRV_SRC_WIFI`) = func () {
             time = time,
         ])
         kind == `:number DRV_WIFI_SCAN_DONE` => {
+            val status = `:string esp_wifi_evt.scan_status`
             var aps = nil
-            `esp_wifi_scan_aps(esp_wifi_evt.scan_count, &$aps);`
+            if status == "success" {
+                `esp_wifi_scan_aps(esp_wifi_evt.scan_count, &$aps);`
+            }
             emit(:wifi.scan [
-                aps  = aps,
-                time = time,
+                aps    = aps,
+                status = status,
+                time   = time,
             ])
         }
         kind == `:number DRV_WIFI_AP_CONNECTED` => emit(:wifi.ap.connected [

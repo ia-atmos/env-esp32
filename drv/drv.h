@@ -151,6 +151,7 @@ typedef enum {
     DRV_ESPNOW_NONE = 0,
     DRV_ESPNOW_RECV,                // a message arrived
     DRV_ESPNOW_SEND,                // the result of a send
+    DRV_ESPNOW_STOP,                // ESP-NOW stopped (drv_espnow_stop)
 } drv_espnow_kind_t;
 
 // Apart from drv_evt_t, which would grow by the payload.
@@ -159,12 +160,18 @@ typedef struct {
     int64_t time_us;
     char mac[18];                   // "24:0a:c4:05:06:07"
     bool ok;                        // SEND: delivered (unicast) or sent
+    const char* reason;             // STOP: "stopped" or "sleep" (static)
     int len;                        // RECV
     uint8_t data[DRV_ESPNOW_MAX_DATA];
 } drv_espnow_evt_t;
 
-// Wi-Fi in station mode, channel 1, with the broadcast peer.
+// Wi-Fi in station mode, channel 1, with the broadcast peer. Starts the
+// radio if it is off (also after drv_espnow_stop or drv_wifi_stop).
 const char* drv_espnow_init        (void);
+// Ends ESP-NOW and forgets its peers; turns the radio off if Wi-Fi does
+// not use it. Queues a STOP with `reason` (a static string) if ESP-NOW
+// was running; does nothing otherwise.
+const char* drv_espnow_stop        (const char* reason);
 const char* drv_espnow_add_peer    (const char* mac);
 const char* drv_espnow_send        (const char* mac, const uint8_t* data, int len);
 const char* drv_espnow_get_mac     (char mac[18]);
@@ -211,7 +218,8 @@ typedef struct {
     int  reason;                // DISCONNECTED, AP_DISCONNECTED
     int  aid;                   // AP_CONNECTED, AP_DISCONNECTED
     bool changed;               // GOT_IP
-    int  scan_count;            // SCAN_DONE
+    int  scan_count;            // SCAN_DONE (0 unless "success")
+    const char* scan_status;    // SCAN_DONE: "success", "stopped" or "fail"
 } drv_wifi_evt_t;
 
 typedef struct {
@@ -254,6 +262,10 @@ typedef struct {
 const char* drv_wifi_connect     (const char* ssid, const char* password,
                                   const drv_wifi_connect_opts_t* opts);
 const char* drv_wifi_disconnect  (void);
+// Ends STA, SoftAP and scan. The radio turns off only if ESP-NOW does
+// not use it. Queues a SCAN_DONE ("stopped") for a scan in progress, an
+// AP_DISCONNECTED for each SoftAP client, and a DISCONNECTED if STA was
+// connecting or connected (reason 8, ASSOC_LEAVE).
 const char* drv_wifi_stop        (void);
 const char* drv_wifi_scan        (const drv_wifi_scan_opts_t* opts);
 int         drv_wifi_scan_result (int index, drv_wifi_ap_t* ap);

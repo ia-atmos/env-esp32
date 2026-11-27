@@ -4,6 +4,16 @@
 // The callbacks of ESP-NOW run in the task of Wi-Fi, not in an
 // interrupt: they queue with xQueueSend (the Lua version used the
 // FromISR variants).
+//
+// The radio is shared with drv/esp32/wifi.c (radio.h): drv_espnow_stop
+// turns it off only if Wi-Fi does not use it, and drv_espnow_init starts
+// it again if it is off.
+//
+// No RECV or SEND after the STOP: a callback may run in the task of
+// Wi-Fi while the main task stops ESP-NOW, so it queues only if
+// `s_running`, both under `s_lock`; drv_espnow_stop clears `s_running`
+// under the lock before it queues the STOP. A callback that took the lock
+// first queued before the STOP; one that takes it afterwards drops.
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -18,15 +28,38 @@
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
+#include "freertos/semphr.h"
 
 #include "drv.h"
+#include "radio.h"
 
 #define QUEUE_LEN 16
 
 _Static_assert(DRV_ESPNOW_MAX_DATA == ESP_NOW_MAX_DATA_LEN, "ESP-NOW payload");
 
-static QueueHandle_t s_queue = NULL;
-static bool s_inited = false;
+static QueueHandle_t     s_queue = NULL;
+static SemaphoreHandle_t s_lock  = NULL;
+static bool s_inited  = false;      // the main task only
+static bool s_running = false;      // under s_lock: the callbacks may queue
+
+// From the callbacks (the task of Wi-Fi).
+static void queue_if_running (const drv_espnow_evt_t* e) {
+    if (s_queue == NULL || s_lock == NULL) {
+        return;
+    }
+    (void) xSemaphoreTake(s_lock, portMAX_DELAY);
+    bool queued = s_running && xQueueSend(s_queue, e, 0) == pdTRUE;
+    (void) xSemaphoreGive(s_lock);
+    if (queued) {
+        drv_clock_wake();
+    }
+}
+
+static void set_running (bool on) {
+    (void) xSemaphoreTake(s_lock, portMAX_DELAY);
+    s_running = on;
+    (void) xSemaphoreGive(s_lock);
+}
 
 static bool parse_mac (const char* s, uint8_t mac[6]) {
     unsigned v[6];
@@ -49,9 +82,6 @@ static void fmt_mac (const uint8_t mac[6], char out[18]) {
 }
 
 static void recv_cb (const esp_now_recv_info_t* info, const uint8_t* data, int len) {
-    if (s_queue == NULL) {
-        return;
-    }
     drv_espnow_evt_t e = { .kind=DRV_ESPNOW_RECV, .time_us=esp_timer_get_time(), .ok=true };
     fmt_mac(info->src_addr, e.mac);
     if (len > DRV_ESPNOW_MAX_DATA) {
@@ -61,19 +91,14 @@ static void recv_cb (const esp_now_recv_info_t* info, const uint8_t* data, int l
         memcpy(e.data, data, len);
     }
     e.len = (len > 0) ? len : 0;
-    (void) xQueueSend(s_queue, &e, 0);
-    drv_clock_wake();
+    queue_if_running(&e);
 }
 
 static void send_cb (const esp_now_send_info_t* info, esp_now_send_status_t status) {
-    if (s_queue == NULL) {
-        return;
-    }
     drv_espnow_evt_t e = { .kind=DRV_ESPNOW_SEND, .time_us=esp_timer_get_time() };
     e.ok = (status == ESP_NOW_SEND_SUCCESS);
     fmt_mac(info->des_addr, e.mac);
-    (void) xQueueSend(s_queue, &e, 0);
-    drv_clock_wake();
+    queue_if_running(&e);
 }
 
 static esp_err_t init_wifi (void) {
@@ -146,6 +171,12 @@ const char* drv_espnow_init (void) {
             return drv_errf("espnow.init : failed to create the event queue");
         }
     }
+    if (s_lock == NULL) {
+        s_lock = xSemaphoreCreateMutex();
+        if (s_lock == NULL) {
+            return drv_errf("espnow.init : failed to create the lock");
+        }
+    }
     if ((err = esp_now_register_recv_cb(recv_cb)) != ESP_OK) {
         return fail("espnow.init", "failed to register recv callback", err);
     }
@@ -159,8 +190,33 @@ const char* drv_espnow_init (void) {
         (void) esp_now_add_peer(&peer);
     }
     drv_source_add(DRV_SRC_ESPNOW, peek);
+    radio_use(RADIO_ESPNOW);
     s_inited = true;
+    set_running(true);
     return NULL;
+}
+
+const char* drv_espnow_stop (const char* reason) {
+    if (!s_inited) {
+        return NULL;
+    }
+    set_running(false);     // from now, the callbacks drop: none after the STOP
+    esp_err_t err = esp_now_deinit();       // also forgets the peers
+    s_inited = false;
+    if (radio_release(RADIO_ESPNOW)) {
+        radio_off();
+    }
+    // the program must learn that ESP-NOW ended: if the queue is full,
+    // the oldest event gives place to this one (no callback queues anymore)
+    drv_espnow_evt_t e = { .kind=DRV_ESPNOW_STOP, .time_us=esp_timer_get_time(),
+                           .reason=reason };
+    if (xQueueSend(s_queue, &e, 0) != pdTRUE) {
+        drv_espnow_evt_t old;
+        (void) xQueueReceive(s_queue, &old, 0);
+        (void) xQueueSend(s_queue, &e, 0);
+    }
+    drv_clock_wake();
+    return (err == ESP_OK) ? NULL : fail("espnow.stop", "esp_now_deinit failed", err);
 }
 
 const char* drv_espnow_add_peer (const char* s) {

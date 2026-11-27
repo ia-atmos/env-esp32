@@ -4,9 +4,16 @@
 ;;      :espnow.recv [mac, data, time]      a message arrived
 ;;      :espnow.send [mac, status, time]    the result of a send:
 ;;                                          "success" or "fail"
+;;      :espnow.stop [reason, time]         ESP-NOW stopped: "stopped"
+;;                                          (espnow.stop) or "sleep"
 ;;
 ;; A "success" of a unicast means that the peer acknowledged the
 ;; message; of a broadcast ("ff:ff:ff:ff:ff:ff"), only that it was sent.
+;;
+;; ESP-NOW shares the radio with `env/wifi.atm`: `espnow.stop` turns it
+;; off only if Wi-Fi does not use it, and `wifi.stop` does not end
+;; ESP-NOW. `sleep.deep` and `sleep.light` stop ESP-NOW (`:espnow.stop
+;; [reason="sleep"]`); after a light sleep, `espnow.init` starts it again.
 
 include "esp32.atm"
 
@@ -51,6 +58,16 @@ func espnow.init () {
     `st = esp_chk(drv_espnow_init());`
 }
 
+;; emits :espnow.stop [reason="stopped"] if ESP-NOW was running; the
+;; peers are forgotten (add them again after the next espnow.init)
+func espnow.stop () {
+    `st = esp_chk(drv_espnow_stop("stopped"));`
+}
+
+set esp32.radios.espnow = func () {
+    `st = esp_chk(drv_espnow_stop("sleep"));`
+}
+
 ;; mac: "24:0a:c4:05:06:07"
 func espnow.add_peer (mac) {
     `st = esp_now_add_peer($mac);`
@@ -80,16 +97,20 @@ set esp32.drain@(`:number DRV_SRC_ESPNOW`) = func () {
     `drv_espnow_next(&esp_now_evt);`
     val mac  = `:string esp_now_evt.mac`
     val time = `:number esp_now_evt.time_us / A_CLOCK_US`
-    if `:boolean esp_now_evt.kind == DRV_ESPNOW_RECV` {
-        emit(:espnow.recv [
+    val kind = `:number esp_now_evt.kind`
+    ifs {
+        kind == `:number DRV_ESPNOW_RECV` => emit(:espnow.recv [
             mac  = mac,
             data = `:atmos a_str((const char*) esp_now_evt.data, esp_now_evt.len)`,
             time = time,
         ])
-    } else {
-        emit(:espnow.send [
+        kind == `:number DRV_ESPNOW_SEND` => emit(:espnow.send [
             mac    = mac,
             status = if `:boolean esp_now_evt.ok` => "success" => "fail",
+            time   = time,
+        ])
+        kind == `:number DRV_ESPNOW_STOP` => emit(:espnow.stop [
+            reason = `:string esp_now_evt.reason`,
             time   = time,
         ])
     }

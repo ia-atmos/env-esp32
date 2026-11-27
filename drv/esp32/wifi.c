@@ -8,7 +8,17 @@
 //   - Both share the default netif/event loop/esp_wifi driver safely.
 //   - Starting SoftAP while STA (or ESP-NOW) is active uses WIFI_MODE_APSTA
 //     so STA/ESP-NOW stays alive; stopping SoftAP drops back to WIFI_MODE_STA.
-//   - Stopping Wi-Fi (drv_wifi_stop) stops the shared radio for both.
+//   - Stopping Wi-Fi (drv_wifi_stop) ends STA, SoftAP and scan; the radio
+//     turns off only if ESP-NOW does not use it (radio.h).
+//   - A stop tells the program of everything it ends, exactly once:
+//     drv_wifi_stop queues the DISCONNECTED of the STA (the one that
+//     ESP-IDF posts afterwards, in ST_STOPPED, is dropped) and a SCAN_DONE
+//     "stopped" for a scan in progress (a late SCAN_DONE, with no scan in
+//     progress, is dropped); drv_wifi_stop and drv_wifi_stop_ap queue an
+//     AP_DISCONNECTED for each SoftAP client that the program saw connect
+//     (`s_clients`: a client leaves it by its AP_DISCONNECTED, from
+//     ESP-IDF or from the stop, whichever comes first; with no SoftAP,
+//     the AP events of ESP-IDF are dropped). The reason is 8 (ASSOC_LEAVE).
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -27,6 +37,7 @@
 #include "freertos/semphr.h"
 
 #include "drv.h"
+#include "radio.h"
 
 #define WIFI_QUEUE_LEN       16
 #define WIFI_SCAN_DEF_MAX    20
@@ -61,6 +72,15 @@ static char s_ap_ssid[33];
 
 static drv_wifi_ap_t s_scan_aps[DRV_WIFI_SCAN_MAX];
 static int           s_scan_n = 0;
+
+// The SoftAP clients that the program saw connect (under s_lock).
+#define AP_CLIENTS_MAX 10           // max_conn of drv_wifi_start_ap
+typedef struct {
+    char mac[18];
+    int  aid;
+} ap_client_t;
+static ap_client_t s_clients[AP_CLIENTS_MAX];
+static int         s_clients_n = 0;
 
 static void lock_take (void) {
     if (s_lock != NULL) {
@@ -143,6 +163,43 @@ static void queue_evt (const drv_wifi_evt_t* e) {
     }
 }
 
+// Under s_lock.
+static void clients_add (const char* mac, int aid) {
+    if (s_clients_n < AP_CLIENTS_MAX) {
+        strcpy(s_clients[s_clients_n].mac, mac);
+        s_clients[s_clients_n].aid = aid;
+        s_clients_n++;
+    }
+}
+
+// Under s_lock.
+static void clients_remove (const char* mac) {
+    for (int i = 0; i < s_clients_n; i++) {
+        if (!strcmp(s_clients[i].mac, mac)) {
+            s_clients[i] = s_clients[--s_clients_n];
+            return;
+        }
+    }
+}
+
+// Under s_lock: the clients that a stop disconnects, which leave the table.
+static int clients_take (ap_client_t out[AP_CLIENTS_MAX]) {
+    int n = s_clients_n;
+    memcpy(out, s_clients, (size_t)n * sizeof(ap_client_t));
+    s_clients_n = 0;
+    return n;
+}
+
+static void queue_clients_gone (const ap_client_t* c, int n) {
+    for (int i = 0; i < n; i++) {
+        drv_wifi_evt_t e = { .kind = DRV_WIFI_AP_DISCONNECTED,
+                             .time_us = esp_timer_get_time(),
+                             .aid = c[i].aid, .reason = 8 };     // ASSOC_LEAVE
+        strcpy(e.bssid, c[i].mac);
+        queue_evt(&e);
+    }
+}
+
 static void on_wifi_event (void* arg, esp_event_base_t base,
                            int32_t id, void* data) {
     (void) arg;
@@ -175,6 +232,11 @@ static void on_wifi_event (void* arg, esp_event_base_t base,
             e.reason = ev->reason;
 
             lock_take();
+            if (s_state == ST_STOPPED) {
+                // the echo of drv_wifi_stop, which queued its own
+                lock_give();
+                break;
+            }
             if (s_started) {
                 s_state = ST_DISCONNECTED;
             }
@@ -190,8 +252,12 @@ static void on_wifi_event (void* arg, esp_event_base_t base,
             break;
         }
         case WIFI_EVENT_SCAN_DONE: {
+            const wifi_event_sta_scan_done_t* ev = (const wifi_event_sta_scan_done_t*) data;
+            bool failed = (ev != NULL && ev->status != 0);
             uint16_t ap_num = 0;
-            (void) esp_wifi_scan_get_ap_num(&ap_num);
+            if (!failed) {
+                (void) esp_wifi_scan_get_ap_num(&ap_num);
+            }
             int cap = s_scan_max;
             if (cap <= 0 || cap > DRV_WIFI_SCAN_MAX) {
                 cap = DRV_WIFI_SCAN_MAX;
@@ -213,6 +279,12 @@ static void on_wifi_event (void* arg, esp_event_base_t base,
             }
 
             lock_take();
+            if (!s_scanning) {
+                // no scan in progress: drv_wifi_stop already queued its end
+                lock_give();
+                free(recs);
+                break;
+            }
             s_scanning = false;
             s_scan_n = (int) count;
             for (int i = 0; i < s_scan_n; i++) {
@@ -230,6 +302,7 @@ static void on_wifi_event (void* arg, esp_event_base_t base,
                 .kind = DRV_WIFI_SCAN_DONE,
                 .time_us = now,
                 .scan_count = (int) count,
+                .scan_status = failed ? "fail" : "success",
             };
             queue_evt(&e);
             break;
@@ -239,7 +312,15 @@ static void on_wifi_event (void* arg, esp_event_base_t base,
             drv_wifi_evt_t e = { .kind = DRV_WIFI_AP_CONNECTED, .time_us = now };
             fmt_mac(ev->mac, e.bssid);
             e.aid = ev->aid;
-            queue_evt(&e);
+            lock_take();
+            bool on = s_ap_active;
+            if (on) {
+                clients_add(e.bssid, e.aid);
+            }
+            lock_give();
+            if (on) {
+                queue_evt(&e);
+            }
             break;
         }
         case WIFI_EVENT_AP_STADISCONNECTED: {
@@ -248,7 +329,15 @@ static void on_wifi_event (void* arg, esp_event_base_t base,
             fmt_mac(ev->mac, e.bssid);
             e.aid = ev->aid;
             e.reason = ev->reason;
-            queue_evt(&e);
+            lock_take();
+            bool on = s_ap_active;      // with no SoftAP: the stop queued it
+            if (on) {
+                clients_remove(e.bssid);
+            }
+            lock_give();
+            if (on) {
+                queue_evt(&e);
+            }
             break;
         }
         default:
@@ -484,6 +573,7 @@ const char* drv_wifi_connect (const char* ssid, const char* password,
     if ((err = esp_wifi_start()) != ESP_OK) {
         return fail("wifi.connect", "failed to start wifi", err);
     }
+    radio_use(RADIO_WIFI);
     if (set_ps) {
         if ((err = esp_wifi_set_ps(ps)) != ESP_OK) {
             return fail("wifi.connect", "failed to set power save", err);
@@ -521,16 +611,24 @@ const char* drv_wifi_stop (void) {
     if (!s_inited) {
         return NULL;
     }
-    esp_err_t err = esp_wifi_stop();
-    if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_INIT) {
-        return fail("wifi.stop", "esp_wifi_stop failed", err);
-    }
+    drv_wifi_evt_t e = { .kind = DRV_WIFI_DISCONNECTED, .reason = 8 };  // ASSOC_LEAVE
     lock_take();
+    bool sta = (s_state == ST_CONNECTING || s_state == ST_CONNECTED || s_state == ST_GOT_IP);
+    bool ap = s_ap_active;
+    bool scanning = s_scanning;
+    ap_client_t gone[AP_CLIENTS_MAX];
+    int ngone = clients_take(gone);
+    if (scanning) {
+        s_scan_n = 0;
+    }
+    strcpy(e.ssid, s_ssid);
+    strcpy(e.bssid, s_bssid);
     s_started = false;
     s_sta_active = false;
     s_ap_active = false;
     s_scanning = false;
-    s_state = ST_STOPPED;
+    s_state = ST_STOPPED;       // from now, the handler drops DISCONNECTED,
+                                // SCAN_DONE and the AP events
     s_ssid[0] = '\0';
     s_bssid[0] = '\0';
     s_ip[0] = '\0';
@@ -539,6 +637,37 @@ const char* drv_wifi_stop (void) {
     s_ap_ssid[0] = '\0';
     s_channel = 0;
     lock_give();
+
+    esp_err_t err = ESP_OK;
+    if (radio_release(RADIO_WIFI)) {
+        radio_off();
+    } else {
+        // ESP-NOW keeps the radio: undo only what Wi-Fi started
+        if (scanning) {
+            (void) esp_wifi_scan_stop();
+        }
+        if (sta) {
+            err = esp_wifi_disconnect();
+        }
+        if (ap && err == ESP_OK) {
+            err = esp_wifi_set_mode(WIFI_MODE_STA);
+        }
+        (void) esp_wifi_set_ps(WIFI_PS_NONE);   // as drv_espnow_init
+    }
+    if (scanning) {
+        drv_wifi_evt_t d = { .kind = DRV_WIFI_SCAN_DONE,
+                             .time_us = esp_timer_get_time(), .scan_count = 0,
+                             .scan_status = "stopped" };
+        queue_evt(&d);
+    }
+    queue_clients_gone(gone, ngone);
+    if (sta) {
+        e.time_us = esp_timer_get_time();
+        queue_evt(&e);
+    }
+    if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_STARTED) {
+        return fail("wifi.stop", "failed to stop wifi", err);
+    }
     return NULL;
 }
 
@@ -583,6 +712,7 @@ const char* drv_wifi_scan (const drv_wifi_scan_opts_t* opts) {
     if ((err = esp_wifi_start()) != ESP_OK) {
         return fail("wifi.scan", "failed to start wifi", err);
     }
+    radio_use(RADIO_WIFI);
 
     lock_take();
     s_started = true;
@@ -689,6 +819,7 @@ const char* drv_wifi_start_ap (const char* ssid, const char* password,
     if ((err = esp_wifi_start()) != ESP_OK) {
         return fail("wifi.start_ap", "failed to start wifi", err);
     }
+    radio_use(RADIO_WIFI);
 
     lock_take();
     s_started = true;
@@ -712,18 +843,26 @@ const char* drv_wifi_stop_ap (void) {
         err = esp_wifi_set_mode(WIFI_MODE_STA);
     } else {
         err = esp_wifi_stop();
+        (void) esp_wifi_set_mode(WIFI_MODE_NULL);
     }
     if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_INIT) {
         return fail("wifi.stop_ap", "failed to stop AP", err);
     }
+    ap_client_t gone[AP_CLIENTS_MAX];
     lock_take();
-    s_ap_active = false;
+    s_ap_active = false;        // from now, the handler drops the AP events
+    int ngone = clients_take(gone);
     s_ap_ssid[0] = '\0';
+    bool sta_active = s_sta_active;
     if (cur != WIFI_MODE_APSTA && !s_sta_active) {
         s_started = false;
         s_state = ST_STOPPED;
     }
     lock_give();
+    queue_clients_gone(gone, ngone);
+    if (!sta_active) {
+        (void) radio_release(RADIO_WIFI);  // ESP-NOW, if any, keeps it on
+    }
     return NULL;
 }
 
