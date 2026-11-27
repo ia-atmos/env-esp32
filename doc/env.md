@@ -54,8 +54,8 @@ links the Wi-Fi stack, and its image is about 980 KB.
 | `clock` | `clock.now` (µs since boot) | the time |
 | `gpio` | `setup`/`mode`, `read`, `write`, `watch`, `unwatch`, `read_adc`, `setup_pwm`, `attach_pwm`, `detach_pwm`, `stop_pwm`, `write_pwm`, `fade_pwm` | `:gpio [pin,value,edge,time]`, `:gpio.pwm_fade [channel,time]` |
 | `ir` | `start(pin [,options])`, `stop`, `stats` | `:ir [protocol,address,command,raw,bits,repeat,time]` |
-| `espnow` | `init`, `add_peer`, `send`, `get_mac`, `get_channel`, `set_channel` | `:espnow.recv [mac,data,time]`, `:espnow.send [mac,status,time]` |
-| `wifi` | `connect(ssid [,password [,options]])`, `disconnect`, `stop`, `scan([options])`, `start_ap(ssid [,password [,options]])`, `stop_ap`, `status`, `info`, `get_mac`, `get_channel` | `:wifi.connected [ssid,bssid,channel,time]`, `:wifi.disconnected [ssid,bssid,reason,time]`, `:wifi.got_ip [ip,netmask,gateway,changed,time]`, `:wifi.lost_ip [time]`, `:wifi.scan [aps,time]`, `:wifi.ap.connected [mac,aid,time]`, `:wifi.ap.disconnected [mac,aid,reason,time]`, `:wifi.ap.sta_ip [mac,ip,time]` |
+| `espnow` | `init`, `stop`, `add_peer`, `send`, `get_mac`, `get_channel`, `set_channel` | `:espnow.recv [mac,data,time]`, `:espnow.send [mac,status,time]`, `:espnow.stop [reason,time]` |
+| `wifi` | `connect(ssid [,password [,options]])`, `disconnect`, `stop`, `scan([options])`, `start_ap(ssid [,password [,options]])`, `stop_ap`, `status`, `info`, `get_mac`, `get_channel` | `:wifi.connected [ssid,bssid,channel,time]`, `:wifi.disconnected [ssid,bssid,reason,time]`, `:wifi.got_ip [ip,netmask,gateway,changed,time]`, `:wifi.lost_ip [time]`, `:wifi.scan [aps,status,time]`, `:wifi.ap.connected [mac,aid,time]`, `:wifi.ap.disconnected [mac,aid,reason,time]`, `:wifi.ap.sta_ip [mac,ip,time]` |
 | `preferences` | `open`/`begin`, `close`, `commit`, `put_int`, `get_int`, `put_bool`, `get_bool`, `put_string`, `get_string`, `is_key`, `remove`, `clear` | |
 | `sleep` | `deep(duration\|options)`, `light(duration\|options)`, `cause`, `causes`, `wakeup_pins`, `reset_reason`, `rtc_put_int`/`rtc_get_int`, `rtc_put_bool`/`rtc_get_bool`, `rtc_put_string`/`rtc_get_string`, `rtc_is_key`, `rtc_remove`, `rtc_clear` | `:sleep.before [mode,duration,time]`, `:sleep.wake [cause,causes,pins,slept,time]` |
 | `debug` | `meminfo`, tasks `Mem` and `Fps` | |
@@ -65,7 +65,13 @@ argument, or a failure of ESP-IDF, raises an error with a message such
 as `gpio.write : GPIO pin 34 cannot be used as output`, which `catch`
 takes.
 
-### Wi-Fi (`env/wifi.atm`) and ESP-NOW coexistence
+### Wi-Fi (`env/wifi.atm`), ESP-NOW, and the shared radio
+
+`:wifi.scan` gives a `status`: `"success"` (then `aps` is the list, and
+an empty list means that no network was found), `"stopped"` (`wifi.stop`
+or a sleep ended the scan) or `"fail"` (ESP-IDF failed it); `aps` is
+`nil` unless `"success"`, so a program that ignores `status` fails
+instead of taking an unfinished scan for an empty neighborhood.
 
 `wifi` is non-blocking: `wifi.connect`, `wifi.scan`, and `wifi.start_ap`
 return immediately and report state transitions through `:wifi.*` events
@@ -85,8 +91,20 @@ and `:wifi`). Reconnection policy is left to the Atmos program (e.g., a
   which reports the same physical radio channel as `espnow.get_channel()`).
   Pass `[power_save="none"]` to `wifi.connect` if you want low-latency
   ESP-NOW reception while connected to an AP.
-- `wifi.stop()` powers down the shared Wi-Fi radio for both Wi-Fi and
-  ESP-NOW.
+- The radio is shared: each module marks it as used when it starts, and
+  it turns off only when the last one stops (`drv/esp32/radio.c`).
+  `wifi.stop()` ends STA, SoftAP and scan, but not ESP-NOW;
+  `espnow.stop()` ends ESP-NOW, but not Wi-Fi.
+- A stop always tells the program, once, so that a task in `watching`
+  or in an `await` does not wait forever: `wifi.stop()` emits
+  `:wifi.scan [status="stopped"]` for a scan in progress, `:wifi.ap.disconnected
+  [reason=8]` for each SoftAP client (as `wifi.stop_ap()` does), and
+  `:wifi.disconnected [reason=8]` if STA was connecting or connected;
+  the events that ESP-IDF posts afterwards for the same are dropped.
+  `espnow.stop()` emits
+  `:espnow.stop [reason="stopped"]` (ESP-NOW has no connection, so this
+  is its only sign of an end). `espnow.stop()` forgets the peers;
+  `espnow.init()` starts ESP-NOW and the radio again.
 - Programs that do not include `env/wifi.atm` or `env/espnow.atm` do not
   link the Wi-Fi stack.
 
@@ -116,10 +134,18 @@ Atmos tasks resume where they left off). Multiple wakeup sources
   peripherals to drain: any recent or same-reaction serial output (`print`,
   including inside `:sleep.before`) or in-flight peripheral activity
   (Wi-Fi/ESP-NOW, PWM, RMT) may be cut off. Keep `:sleep.before` handlers to
-  synchronous state or shutdown work (e.g. `sleep.rtc_put_*`, `wifi.stop()`).
+  synchronous state or shutdown work (e.g. `sleep.rtc_put_*`).
+- The radios do not survive a sleep (ESP-IDF requires them stopped before
+  it). Right after `:sleep.before`, in which they still work, sleep stops
+  every radio that the program includes: each such module registers its
+  stop in `esp32.radios`, so sleep links none that the program does not
+  use. After a light sleep, `:wifi.disconnected` and `:espnow.stop
+  [reason="sleep"]` come after `:sleep.wake`, and the program starts the
+  radios again (`wifi.connect`, `espnow.init`), as it reconnects.
 
 Manual board test programs are provided in `app/`: `app/sleep_deep.atm` and
-`app/sleep_light.atm`.
+`app/sleep_light.atm`. On the host, `tst/radio.atm` tests the radios
+with sleep.
 
 ## Differences from the Lua version
 

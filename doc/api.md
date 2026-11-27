@@ -28,6 +28,7 @@ local clock, gpio, espnow, ir = esp32.clock, esp32.gpio, esp32.espnow, esp32.ir
   * [`gpio.fade_pwm`](#gpiofade_pwm)
 * **[3. esp32.espnow](#3-esp32espnow)**
   * [`espnow.init`](#espnowinit)
+  * [`espnow.stop`](#espnowstop-c-environment) (C environment)
   * [`espnow.get_mac`](#espnowget_mac)
   * [`espnow.add_peer`](#espnowadd_peer)
   * [`espnow.send`](#espnowsend)
@@ -70,6 +71,7 @@ local clock, gpio, espnow, ir = esp32.clock, esp32.gpio, esp32.espnow, esp32.ir
   * [`gpio.pwm_fade` Event](#gpiopwm_fade-event)
   * [`espnow.recv` Event](#espnowrecv-event)
   * [`espnow.send` Event](#espnowsend-event)
+  * [`espnow.stop` Event](#espnowstop-event-c-environment) (C environment)
   * [`ir` Event](#ir-event)
   * [`wifi` Events](#wifi-events)
   * [`sleep` Events](#sleep-events)
@@ -267,6 +269,16 @@ Initializes the Wi-Fi Station stack and boots the ESP-NOW communication service.
   * **Power Saving:** Automatically disables Wi-Fi Power Saving (`WIFI_PS_NONE`). This keeps the radio receiver awake at all times to prevent dropped packets.
   * **Channel Lock:** Locks the physical Wi-Fi channel to **Channel 1** to ensure matching transmission frequencies with peer devices.
 * **Cross Reference:** Allows incoming packets to trigger **[`espnow.recv` events](#espnowrecv-event)**.
+* **C environment:** starts the Wi-Fi radio again if it is off (after `espnow.stop`, or after a sleep stopped it). Does nothing if ESP-NOW is already running.
+
+### `espnow.stop` (C environment)
+Stops ESP-NOW. The Wi-Fi radio, shared with the `wifi` module, turns off only if Wi-Fi is not using it.
+* **Syntax:** `espnow.stop()`
+* **Behavior:**
+  * Emits **[`:espnow.stop [reason="stopped"]`](#espnowstop-event-c-environment)** if ESP-NOW was running; does nothing otherwise.
+  * Forgets every peer: call `espnow.add_peer` again after the next `espnow.init`.
+  * Messages that arrived before the stop are still delivered, before `:espnow.stop`; none arrives after it. Messages sent to the board while ESP-NOW is stopped are lost, and the result of a send still in flight is dropped.
+  * `sleep.deep` and `sleep.light` call it, with `reason="sleep"`.
 
 ### `espnow.get_mac`
 Gets the local MAC address of the board.
@@ -512,8 +524,13 @@ Disconnects the station from the current AP while keeping the Wi-Fi driver initi
 * **Syntax:** `wifi.disconnect()`
 
 ### `wifi.stop`
-Stops the Wi-Fi driver and powers down the radio (stops STA, SoftAP, any in-progress scan, and ESP-NOW if active).
+Stops STA, SoftAP, and any scan in progress. The radio, shared with ESP-NOW, turns off only if ESP-NOW is not using it: `wifi.stop` does not end ESP-NOW.
 * **Syntax:** `wifi.stop()`
+* **Events:** tells the program of everything it ends, exactly once (events that ESP-IDF posts afterwards for the same are dropped):
+  * **[`:wifi.scan [status="stopped"]`](#wifi-events)** for a scan in progress;
+  * **[`:wifi.ap.disconnected [reason=8]`](#wifi-events)** for each SoftAP client;
+  * **[`:wifi.disconnected [reason=8]`](#wifi-events)** if STA was connecting or connected.
+* `sleep.deep` and `sleep.light` call it.
 
 ### `wifi.scan`
 Starts a non-blocking scan for nearby Wi-Fi access points. Lazily starts Wi-Fi in STA (or APSTA) mode if stopped. Raises an error if a scan is already in progress.
@@ -524,7 +541,7 @@ Starts a non-blocking scan for nearby Wi-Fi access points. Lazily starts Wi-Fi i
     * `channel`: `integer` (`1` to `14`, `0` or omitted for all channels).
     * `show_hidden`: `boolean` (default `false`).
     * `max`: `integer` maximum APs to return (default `20`, capped at `32`, sorted by strongest RSSI).
-* **Cross Reference:** Emits **[`:wifi.scan`](#wifi-events)** when scanning completes.
+* **Cross Reference:** Emits **[`:wifi.scan`](#wifi-events)** when the scan ends: check its `status` before reading `aps`, which is `nil` unless `status` is `"success"`.
 
 ### `wifi.start_ap`
 Starts a SoftAP access point (default gateway IP `192.168.4.1`). If STA or ESP-NOW is already active, switches automatically to `APSTA` mode so both remain active.
@@ -541,6 +558,7 @@ Starts a SoftAP access point (default gateway IP `192.168.4.1`). If STA or ESP-N
 ### `wifi.stop_ap`
 Stops the SoftAP interface. If STA or ESP-NOW is active, switches back to STA mode without disconnecting it; otherwise stops the Wi-Fi radio.
 * **Syntax:** `wifi.stop_ap()`
+* **Events:** emits **[`:wifi.ap.disconnected [reason=8]`](#wifi-events)** for each client still connected.
 
 ### `wifi.status`
 Returns the current STA connection state string.
@@ -577,7 +595,8 @@ The `sleep` module (`include "../env/sleep.atm"`) exposes ESP32 deep sleep, ligh
 
 ### `sleep.deep`
 Enters deep sleep (CPU and main SRAM power off; waking reboots into `app_main`). Validates arguments first, emits `:sleep.before` globally, configures wakeup triggers + optional RTC pin isolation, and powers down immediately. Never returns on the board.
-* **Note:** `sleep.deep` powers down immediately without draining peripherals—recent or same-reaction serial output (`print`, including inside `:sleep.before`) and in-flight I/O (Wi-Fi/ESP-NOW, PWM, RMT) may be cut off. Keep `:sleep.before` to synchronous state or shutdown work (e.g. `sleep.rtc_put_*`, `wifi.stop()`).
+* **Note:** `sleep.deep` powers down immediately without draining peripherals—recent or same-reaction serial output (`print`, including inside `:sleep.before`) and in-flight I/O (Wi-Fi/ESP-NOW, PWM, RMT) may be cut off. Keep `:sleep.before` to synchronous state or shutdown work (e.g. `sleep.rtc_put_*`).
+* **Radios:** right after `:sleep.before` (in which they still work), stops every radio the program includes (`wifi.stop`, `espnow.stop`), as ESP-IDF requires. Their events are lost with the reboot.
 * **Syntax:** `sleep.deep(duration)` or `sleep.deep(options)`
 * **Arguments:**
   * `duration`: positive Atmos clock duration (e.g. `30s`, `5min`) — shorthand for `[duration=...]`.
@@ -591,6 +610,7 @@ Enters deep sleep (CPU and main SRAM power off; waking reboots into `app_main`).
 ### `sleep.light`
 Enters light sleep (CPU pauses; SRAM and all Atmos tasks stay intact and resume on wake). Emits `:sleep.before`, sleeps immediately until the first wakeup source fires, resynchronizes the Atmos clock, emits `:sleep.wake`, and returns the wakeup table.
 * **Note:** `sleep.light` gates peripheral clocks immediately without draining hardware FIFOs—recent or same-reaction serial output (`print`, including inside `:sleep.before`) and in-flight peripheral activity may be cut off.
+* **Radios:** right after `:sleep.before` (in which they still work), stops every radio the program includes (`wifi.stop`, `espnow.stop`), as ESP-IDF requires. After waking, their `:wifi.disconnected`, `:wifi.ap.disconnected`, `:wifi.scan [status="stopped"]` and `:espnow.stop [reason="sleep"]` come after `:sleep.wake`; the program starts the radios again (`wifi.connect`, `espnow.init`).
 * **Syntax:** `sleep.light(duration)` or `sleep.light(options)`
 * **Arguments:**
   * `duration` or `options` table with `duration`, `ext0`, `ext1`, and/or `gpio` (`[pin=int, level=0|1]` or list `[[pin=..., level=...], ...]`, supporting any valid digital GPIO).
@@ -691,6 +711,19 @@ Secondary environments process physical interrupts and emit them as Atmos events
   > * **Unicast (Specific MAC):** A `status = "success"` outcome guarantees that the target device **successfully received** the packet and returned a hardware Link-layer ACK.
   > * **Broadcast (`"ff:ff:ff:ff:ff:ff"`):** A `status = "success"` outcome **only** confirms the packet was successfully **transmitted into the air** by the local antenna. It does **not** indicate whether any remote device actually heard it.
 
+### `espnow.stop` Event (C environment)
+* **Created/Triggered by:** [`espnow.stop`](#espnowstop-c-environment), or a sleep (`sleep.deep`, `sleep.light`).
+* **Structure:** `:espnow.stop [reason=string, time=integer]`, where `reason` is `"stopped"` (`espnow.stop`) or `"sleep"`.
+* **Purpose:** ESP-NOW has no connection, so this is its only sign of an end. A task that waits for messages should watch it, or it waits forever after a stop or a light sleep:
+  ```atmos
+  watching :espnow.stop {
+      loop {
+          val r = await :espnow.recv
+          print(r.mac, r.data)
+      }
+  }
+  ```
+
 ---
 
 ### `ir` Event
@@ -766,20 +799,20 @@ All Wi-Fi events are hierarchical subtags of `:wifi`, and SoftAP client events a
 
 * **`:wifi.connected`** — STA associated with AP:
   `[ssid=string, bssid=string, channel=integer, time=integer]`
-* **`:wifi.disconnected`** — STA disconnected or connection failed:
+* **`:wifi.disconnected`** — STA disconnected, connection failed, or `wifi.stop` (`reason=8`):
   `[ssid=string, bssid=string, reason=integer, time=integer]`
 * **`:wifi.got_ip`** — STA obtained IPv4 address:
   `[ip=string, netmask=string, gateway=string, changed=boolean, time=integer]`
 * **`:wifi.lost_ip`** — STA lost IPv4 lease:
   `[time=integer]`
-* **`:wifi.scan`** — Async AP scan completed:
-  `[aps=[[ssid, bssid, rssi, channel, auth], ...], time=integer]`
-  where `auth` is `"open"`, `"wep"`, `"wpa"`, `"wpa2"`, `"wpa_wpa2"`, `"enterprise"`, `"wpa3"`, `"wpa2_wpa3"`, `"wapi"`, `"owe"`, or `"unknown"`.
+* **`:wifi.scan`** — Async AP scan ended:
+  `[aps=[[ssid, bssid, rssi, channel, auth], ...]|nil, status=string, time=integer]`
+  where `status` is `"success"` (the scan finished: `aps` is the list, and an empty list means that no network was found), `"stopped"` (`wifi.stop` or a sleep ended it) or `"fail"` (ESP-IDF failed it); `aps` is `nil` unless `"success"`, and `auth` is `"open"`, `"wep"`, `"wpa"`, `"wpa2"`, `"wpa_wpa2"`, `"enterprise"`, `"wpa3"`, `"wpa2_wpa3"`, `"wapi"`, `"owe"`, or `"unknown"`.
 * **`:wifi.ap.connected`** — Client joined SoftAP:
   `[mac=string, aid=integer, time=integer]`
 * **`:wifi.ap.sta_ip`** — SoftAP DHCP server assigned an IP to a client:
   `[mac=string, ip=string, time=integer]`
-* **`:wifi.ap.disconnected`** — Client left SoftAP:
+* **`:wifi.ap.disconnected`** — Client left SoftAP, or `wifi.stop_ap`/`wifi.stop` disconnected it (`reason=8`):
   `[mac=string, aid=integer, reason=integer, time=integer]`
 
 ```atmos
@@ -802,7 +835,7 @@ loop {
 
 * **`:sleep.before`** — Broadcast globally (`emit @:global`) immediately before entering deep or light sleep (after validating options):
   `[mode="deep"|"light", duration=number|nil, time=integer]`
-  *(Runs synchronously in the same reaction as the sleep call—use it for state persistence or peripheral shutdown, not serial `print`.)*
+  *(Runs synchronously in the same reaction as the sleep call—use it for state persistence or peripheral shutdown, not serial `print`. The radios still work here; sleep stops them right after.)*
 * **`:sleep.wake`** — Broadcast globally immediately after returning from `sleep.light`:
   `[cause=string, causes=[string, ...], pins=[int, ...], slept=number, time=integer]`
 
