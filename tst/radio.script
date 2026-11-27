@@ -1,0 +1,14 @@
+# the first connection
+100 wifi connected LabNet aa:bb:cc:dd:ee:01 6
+150 wifi got_ip 192.168.1.42 255.255.255.0 192.168.1.1
+# the second connection
+400 wifi connected LabNet aa:bb:cc:dd:ee:01 6
+450 wifi got_ip 192.168.1.42 255.255.255.0 192.168.1.1
+# an AP for the scan (which the stop interrupts)
+0 wifi ap_add LabNet aa:bb:cc:dd:ee:01 -45 6 wpa2
+# SoftAP clients; the last line comes after wifi.stop, and is dropped
+1500 wifi ap_connected de:ad:be:ef:00:01 1
+1600 wifi ap_connected de:ad:be:ef:00:02 1
+1700 wifi ap_disconnected de:ad:be:ef:00:02 1 3
+# the last scan fails before it finishes
+2150 wifi scan_fail

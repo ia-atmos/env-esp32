@@ -8,7 +8,7 @@ print(:init, wifi.status(), wifi.get_mac())
 ;; scan all APs (sorted by RSSI descending)
 wifi.scan()
 val sc = await :wifi.scan
-print(:scan, #sc.aps, sc.time)
+print(:scan, sc.status, #sc.aps, sc.time)
 loop _, ap in sc.aps {
     print(:ap, ap.ssid, ap.bssid, ap.rssi, ap.channel, ap.auth)
 }

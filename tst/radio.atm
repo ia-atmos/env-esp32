@@ -1,0 +1,91 @@
+;; radio: Wi-Fi and ESP-NOW share the radio; wifi.stop emits
+;; :wifi.disconnected and keeps ESP-NOW; sleep stops both radios, and the
+;; tasks that watch them unwind after a light sleep; a stop ends a scan
+;; (:wifi.scan [status="stopped"]) and disconnects the SoftAP clients,
+;; once; a scan that fails gives [status="fail"].
+
+include "../env/sleep.atm"
+include "../env/wifi.atm"
+include "../env/espnow.atm"
+
+spawn {
+    loop {
+        val e = await :wifi.disconnected
+        print(:wifi_disc, e.reason, e.ssid, e.time)
+    }
+}
+spawn {
+    loop {
+        val e = await :espnow.stop
+        print(:espnow_stop, e.reason, e.time)
+    }
+}
+spawn {
+    loop {
+        val e = await :sleep.wake
+        print(:wake, e.cause, e.time)
+    }
+}
+
+espnow.init()
+wifi.connect("LabNet", "secret")
+await :wifi.got_ip
+
+;; wifi.stop: STA disconnects, ESP-NOW goes on (the radio stays on)
+wifi.stop()
+await(10ms)
+espnow.send("ff:ff:ff:ff:ff:ff", "A")
+print(:espnow_after_wifi_stop, (await :espnow.send).status)
+
+;; a task that watches ESP-NOW, and one that sends a last message
+spawn {
+    watching :espnow.stop {
+        await(false)
+    }
+    print(:unwound)
+}
+spawn {
+    await :sleep.before
+    espnow.send("ff:ff:ff:ff:ff:ff", "BYE")
+}
+
+;; light sleep stops both radios; their events come after :sleep.wake
+wifi.connect("LabNet", "secret")
+await :wifi.got_ip
+val w = sleep.light(1s)
+print(:light, w.cause, wifi.status())
+await(10ms)
+val ok, err = catch true { espnow.send("ff:ff:ff:ff:ff:ff", "x") }
+print(:catch, ok, err)
+
+;; the program starts the radios again
+espnow.init()
+espnow.send("ff:ff:ff:ff:ff:ff", "B")
+print(:espnow_again, (await :espnow.send).status)
+
+;; SoftAP and scan: a stop ends them and tells the program, once
+spawn {
+    loop {
+        val e = await :wifi.ap.disconnected
+        print(:ap_disc, e.mac, e.aid, e.reason, e.time)
+    }
+}
+wifi.start_ap("atmos-ap", "")
+await :wifi.ap.connected
+wifi.stop_ap()                  ;; the client disconnects
+await(10ms)
+wifi.start_ap("atmos-ap", "")
+await :wifi.ap.connected
+wifi.scan()                     ;; would find LabNet at +100ms
+wifi.stop()                     ;; the scan stops, the client disconnects
+val sc = await :wifi.scan
+print(:scan, sc.status, sc.aps, sc.time)
+await(500ms)                    ;; the late events of the script are dropped
+
+;; a scan that fails (the script fails it before it finishes)
+wifi.scan()
+val sf = await :wifi.scan
+print(:scan, sf.status, sf.aps, sf.time)
+
+;; deep sleep with ESP-NOW alone: stopped, then the radio is off
+sleep.deep(10s)

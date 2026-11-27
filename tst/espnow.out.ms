@@ -8,3 +8,10 @@ recv	24:0a:c4:05:06:07	PING from afar	14	300
 send	24:0a:c4:05:06:07	success
 catch	false	espnow.send : esp_now_send failed: ESP_ERR_ESPNOW_NOT_FOUND
 catch	false	espnow.set_channel : invalid Wi-Fi channel (1-14)
+[drv 300ms] espnow.stop stopped
+[drv 300ms] radio off
+catch	false	espnow.send : esp-now is not initialized
+stop	stopped	300
+[drv 2300ms] espnow.init
+catch	false	espnow.send : esp_now_send failed: ESP_ERR_ESPNOW_NOT_FOUND
+recv	BACK	3000

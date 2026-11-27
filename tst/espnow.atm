@@ -19,3 +19,22 @@ val ok, err = catch true { espnow.send("00:00:00:00:00:01", "x") }
 print(:catch, ok, err)
 val ok2, err2 = catch true { espnow.set_channel(15) }
 print(:catch, ok2, err2)
+
+;; stop: one :espnow.stop, then sends fail and the peers are forgotten;
+;; a message while stopped is lost; espnow.init starts it again
+spawn {
+    loop {
+        val e = await :espnow.stop
+        print(:stop, e.reason, e.time)
+    }
+}
+espnow.stop()
+espnow.stop()           ;; already stopped: no second event
+val ok3, err3 = catch true { espnow.send("ff:ff:ff:ff:ff:ff", "x") }
+print(:catch, ok3, err3)
+await(2s)               ;; the message at 1000ms is lost
+espnow.init()
+val ok4, err4 = catch true { espnow.send("24:0a:c4:05:06:07", "x") }
+print(:catch, ok4, err4)
+val r2 = await :espnow.recv
+print(:recv, r2.data, r2.time)

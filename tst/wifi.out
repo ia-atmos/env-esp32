@@ -1,6 +1,6 @@
 init	stopped	24:0a:c4:00:00:01
 [drv 0ms] wifi.scan
-scan	3	100000
+scan	success	3	100000
 ap	LabNet	aa:bb:cc:dd:ee:01	-45	6	wpa2_wpa3
 ap	GuestOpen	11:22:33:44:55:02	-60	6	open
 ap	WeakNet	11:22:33:44:55:01	-82	11	wpa2

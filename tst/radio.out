@@ -1,0 +1,35 @@
+[drv 0ms] espnow.init
+[drv 0ms] wifi.connect LabNet
+[drv 150ms] wifi.stop
+wifi_disc	8	LabNet	150000
+[drv 160ms] espnow.send ff:ff:ff:ff:ff:ff A
+espnow_after_wifi_stop	success
+[drv 160ms] wifi.connect LabNet
+[drv 450ms] espnow.send ff:ff:ff:ff:ff:ff BYE
+[drv 450ms] wifi.stop
+[drv 450ms] espnow.stop sleep
+[drv 450ms] radio off
+[drv 450ms] sleep.light duration=1000ms
+wake	timer	1450000
+light	timer	stopped
+espnow_stop	sleep	450000
+unwound
+wifi_disc	8	LabNet	450000
+catch	false	espnow.send : esp-now is not initialized
+[drv 1460ms] espnow.init
+[drv 1460ms] espnow.send ff:ff:ff:ff:ff:ff B
+espnow_again	success
+[drv 1460ms] wifi.start_ap atmos-ap 1
+[drv 1500ms] wifi.stop_ap
+ap_disc	de:ad:be:ef:00:01	1	8	1500000
+[drv 1510ms] wifi.start_ap atmos-ap 1
+[drv 1600ms] wifi.scan
+[drv 1600ms] wifi.stop
+scan	stopped	nil	1600000
+ap_disc	de:ad:be:ef:00:02	1	8	1600000
+[drv 2100ms] wifi.scan
+scan	fail	nil	2150000
+[drv 2150ms] wifi.stop
+[drv 2150ms] espnow.stop sleep
+[drv 2150ms] radio off
+[drv 2150ms] sleep.deep duration=10000ms

@@ -16,10 +16,14 @@ loop {
     print("--- starting scan ---")
     wifi.scan([show_hidden=true, max=20])
     val ev = await :wifi.scan
-    print(string.format("Found %d network(s):", #ev.aps))
-    loop i, ap in ev.aps {
-        print(string.format("  %2d. %-32s  %s  %4d dBm  ch %2d  %s",
-            i + 1, ap.ssid, ap.bssid, ap.rssi, ap.channel, ap.auth))
+    if ev.status == "success" {
+        print(string.format("Found %d network(s):", #ev.aps))
+        loop i, ap in ev.aps {
+            print(string.format("  %2d. %-32s  %s  %4d dBm  ch %2d  %s",
+                i + 1, ap.ssid, ap.bssid, ap.rssi, ap.channel, ap.auth))
+        }
+    } else {
+        print("Scan did not finish:", ev.status)
     }
     await(10s)
 }
